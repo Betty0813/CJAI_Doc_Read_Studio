@@ -1,0 +1,18 @@
+[package]
+name = "ai_doc_read_studio"
+version = "1.0.0"
+description = "AI Doc Read Studio Backend - Cangjie"
+output-type = "executable"
+src = "src"
+cjc-version = "0.25.1"
+
+[dependencies]
+# 标准库 std.* 由编译器自动解析。stdx 需单独下载并配置 path-option 见下方。
+
+[build]
+target = "release"
+
+# stdx 指向你解压的路径（dynamic\stdx 为动态库）
+[target.x86_64-w64-mingw32]
+[target.x86_64-w64-mingw32.bin-dependencies]
+path-option = ["D:/Download/chrome/cangjie-stdx-windows-x64-1.0.1.1/windows_x86_64_llvm/dynamic/stdx"]

@@ -19,12 +19,12 @@ public func parseDocument(filePath: String): String {
 
 func parseTxt(filePath: String): String {
     let bytes = File.readFrom(filePath)
-    return String.fromUtf8(bytes)
+    return safeDecodeBytes(bytes)
 }
 
 func parseMarkdown(filePath: String): String {
     let bytes = File.readFrom(filePath)
-    return String.fromUtf8(bytes)
+    return safeDecodeBytes(bytes)
 }
 
 func parseDocx(filePath: String): String {

@@ -110,14 +110,35 @@ public enum JsonValue {
 func escapeJsonString(s: String): String {
     let sb = StringBuilder()
     let bytes = s.toArray()
-    for (i in 0..bytes.size) {
+    let size = Int64(bytes.size)
+    let hexChars = "0123456789abcdef".toArray()
+    var i: Int64 = 0
+    while (i < size) {
         let ch = bytes[i]
-        if (ch == 34) { sb.append("\\\"") }
-        else if (ch == 92) { sb.append("\\\\") }
-        else if (ch == 10) { sb.append("\\n") }
-        else if (ch == 13) { sb.append("\\r") }
-        else if (ch == 9) { sb.append("\\t") }
-        else { sb.append(String.fromUtf8([ch])) }
+        if (ch == 34) { sb.append("\\\""); i += 1 }
+        else if (ch == 92) { sb.append("\\\\"); i += 1 }
+        else if (ch == 10) { sb.append("\\n"); i += 1 }
+        else if (ch == 13) { sb.append("\\r"); i += 1 }
+        else if (ch == 9) { sb.append("\\t"); i += 1 }
+        else if (ch < 32) {
+            sb.append("\\u00")
+            sb.append(String.fromUtf8([hexChars[Int64(ch >> 4)]]))
+            sb.append(String.fromUtf8([hexChars[Int64(ch & 15)]]))
+            i += 1
+        } else if (ch <= 127) {
+            sb.append(String.fromUtf8([ch]))
+            i += 1
+        } else if (ch >= 194 && ch <= 223 && i + 1 < size) {
+            try { sb.append(String.fromUtf8([bytes[i], bytes[i + 1]])); i += 2 }
+            catch (_: Exception) { sb.append("?"); i += 1 }
+        } else if (ch >= 224 && ch <= 239 && i + 2 < size) {
+            try { sb.append(String.fromUtf8([bytes[i], bytes[i + 1], bytes[i + 2]])); i += 3 }
+            catch (_: Exception) { sb.append("?"); i += 1 }
+        } else if (ch >= 240 && ch <= 247 && i + 3 < size) {
+            sb.append("?"); i += 4
+        } else {
+            sb.append("?"); i += 1
+        }
     }
     return sb.toString()
 }
@@ -190,24 +211,74 @@ class JsonParser {
         pos += 1
         let sb = StringBuilder()
         while (pos < source.size && source[pos] != 34) {
-            if (source[pos] == 92) {
+            let b = source[pos]
+            if (b == 92) {
+                // escape sequence
                 pos += 1
                 if (pos >= source.size) { return None }
                 let c = source[pos]
-                if (c == 34) { sb.append("\"") }
-                else if (c == 92) { sb.append("\\") }
-                else if (c == 110) { sb.append("\n") }
-                else if (c == 114) { sb.append("\r") }
-                else if (c == 116) { sb.append("\t") }
-                else if (c == 47) { sb.append("/") }
-                else { sb.append(String.fromUtf8([c])) }
+                if (c == 34) { sb.append("\""); pos += 1 }
+                else if (c == 92) { sb.append("\\"); pos += 1 }
+                else if (c == 110) { sb.append("\n"); pos += 1 }
+                else if (c == 114) { sb.append("\r"); pos += 1 }
+                else if (c == 116) { sb.append("\t"); pos += 1 }
+                else if (c == 47) { sb.append("/"); pos += 1 }
+                else if (c == 117 && pos + 4 < source.size) {
+                    // \uXXXX — decode the 4 hex digits to a code point
+                    let h1 = hexVal(source[pos + 1])
+                    let h2 = hexVal(source[pos + 2])
+                    let h3 = hexVal(source[pos + 3])
+                    let h4 = hexVal(source[pos + 4])
+                    if (h1 >= 0 && h2 >= 0 && h3 >= 0 && h4 >= 0) {
+                        let cp = Int64(h1) * 4096 + Int64(h2) * 256 + Int64(h3) * 16 + Int64(h4)
+                        sb.append(cpToUtf8(cp))
+                        pos += 5
+                    } else {
+                        sb.append("?"); pos += 1
+                    }
+                } else {
+                    sb.append(String.fromUtf8([c])); pos += 1
+                }
+            } else if (b <= 127) {
+                sb.append(String.fromUtf8([b]))
+                pos += 1
+            } else if (b >= 194 && b <= 223 && pos + 1 < source.size) {
+                try { sb.append(String.fromUtf8([source[pos], source[pos + 1]])); pos += 2 }
+                catch (_: Exception) { sb.append("?"); pos += 1 }
+            } else if (b >= 224 && b <= 239 && pos + 2 < source.size) {
+                try { sb.append(String.fromUtf8([source[pos], source[pos + 1], source[pos + 2]])); pos += 3 }
+                catch (_: Exception) { sb.append("?"); pos += 1 }
+            } else if (b >= 240 && b <= 247 && pos + 3 < source.size) {
+                sb.append("?"); pos += 4
             } else {
-                sb.append(String.fromUtf8([source[pos]]))
+                sb.append("?"); pos += 1
             }
-            pos += 1
         }
-        if (pos < source.size) { pos += 1 }
+        if (pos < source.size) { pos += 1 } // skip closing "
         return Some(JsonValue.JsonString(sb.toString()))
+    }
+
+    func hexVal(b: Byte): Int64 {
+        if (b >= 48 && b <= 57) { return Int64(b - 48) }
+        if (b >= 65 && b <= 70) { return Int64(b - 55) }
+        if (b >= 97 && b <= 102) { return Int64(b - 87) }
+        return -1
+    }
+
+    func cpToUtf8(cp: Int64): String {
+        if (cp <= 0x7F) {
+            return String.fromUtf8([UInt8(cp)])
+        } else if (cp <= 0x7FF) {
+            return String.fromUtf8([UInt8(0xC0 | (cp >> 6)), UInt8(0x80 | (cp & 0x3F))])
+        } else if (cp <= 0xFFFF) {
+            return String.fromUtf8([
+                UInt8(0xE0 | (cp >> 12)),
+                UInt8(0x80 | ((cp >> 6) & 0x3F)),
+                UInt8(0x80 | (cp & 0x3F))
+            ])
+        } else {
+            return "?"
+        }
     }
 
     func parseNumber(): ?JsonValue {

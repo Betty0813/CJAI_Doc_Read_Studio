@@ -91,7 +91,7 @@ func addCorsHeaders(ctx: HttpContext): Unit {
     ctx.responseBuilder
         .header("Access-Control-Allow-Origin", "*")
         .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        .header("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, Pragma, X-Requested-With")
         .header("Access-Control-Allow-Credentials", "true")
         .header("Cache-Control", "no-cache, no-store, must-revalidate")
         .header("Pragma", "no-cache")

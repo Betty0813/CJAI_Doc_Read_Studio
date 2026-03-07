@@ -312,7 +312,7 @@ OTHER AGENTS' INITIAL FEEDBACK:
 DOCUMENTS:
 {docs}
 
-YOUR TASK ??DEBATE ROUND:
+YOUR TASK - DEBATE ROUND:
 1. CHALLENGE points you disagree with
 2. SUPPORT points you strongly agree with
 3. REFINE suggestions by other agents

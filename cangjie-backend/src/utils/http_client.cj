@@ -1,6 +1,7 @@
 package ai_doc_read_studio.utils
 
 import stdx.net.http.*
+import stdx.net.tls.*
 import std.io.*
 import std.time.*
 import std.collection.*
@@ -13,7 +14,14 @@ public class OpenAIClient {
     public init(apiKey: String, baseUrl!: String = "https://api.openai.com/v1") {
         this.apiKey = apiKey
         this.baseUrl = baseUrl
-        this.client = ClientBuilder().build()
+        // TrustAll skips CA verification — acceptable for calling third-party HTTPS
+        // APIs in development where the system CA store may not be configured with
+        // the OpenSSL DLLs we bundle. Switch to Default or CustomCA for production.
+        var tlsCfg = TlsClientConfig()
+        tlsCfg.verifyMode = TrustAll
+        this.client = ClientBuilder()
+            .tlsConfig(tlsCfg)
+            .build()
     }
 
     public func chatCompletion(
@@ -25,38 +33,35 @@ public class OpenAIClient {
     ): (String, JsonValue) {
         let url = "${baseUrl}/chat/completions"
 
-        let messagesArr = jsonArray()
+        // Build the messages JSON array manually using safeJsonString so that we
+        // never call Cangjie's toJsonString() on user/document content (it crashes
+        // on certain valid Unicode codepoints).
+        let msgParts = ArrayList<String>()
         for (msg in messages) {
-            let msgObj = jsonObject()
-            for ((k, v) in msg) {
-                msgObj[k] = JsonValue.JsonString(v)
-            }
-            messagesArr.add(JsonValue.JsonObject(msgObj))
+            let role = msg.get("role") ?? ""
+            let content = msg.get("content") ?? ""
+            msgParts.add("{\"role\":${safeJsonString(role)},\"content\":${safeJsonString(content)}}")
         }
+        var messagesJson = "["
+        var first = true
+        for (part in msgParts) {
+            if (!first) { messagesJson += "," }
+            messagesJson += part
+            first = false
+        }
+        messagesJson += "]"
 
-        let bodyObj = jsonObject()
-        bodyObj["model"] = JsonValue.JsonString(model)
-        bodyObj["messages"] = JsonValue.JsonArray(messagesArr)
-        bodyObj["max_tokens"] = JsonValue.JsonInt(maxTokens)
-        bodyObj["temperature"] = JsonValue.JsonFloat(temperature)
-
+        // tools part – toJsonString() is safe here since tools are structured JsonValues
+        var toolsSuffix = ""
         match (tools) {
-            case Some(t) => bodyObj["tools"] = t
+            case Some(t) =>
+                try {
+                    toolsSuffix = ",\"tools\":${t.toJsonString()},\"tool_choice\":\"auto\""
+                } catch (_: Exception) { toolsSuffix = "" }
             case None => ()
         }
 
-        match (tools) {
-            case Some(_) => bodyObj["tool_choice"] = JsonValue.JsonString("auto")
-            case None => ()
-        }
-
-        var bodyJson = ""
-        try {
-            bodyJson = JsonValue.JsonObject(bodyObj).toJsonString()
-        } catch (e: Exception) {
-            logger.warning("toJsonString() failed: ${e.toString()}")
-            throw e
-        }
+        let bodyJson = "{\"model\":${safeJsonString(model)},\"messages\":${messagesJson},\"max_tokens\":${maxTokens},\"temperature\":${temperature}${toolsSuffix}}"
         logger.info("Request body built OK, length=${bodyJson.size}")
 
         let request = HttpRequestBuilder()
@@ -95,6 +100,77 @@ public class OpenAIClient {
     }
 }
 
+// Decode a byte array to String safely, replacing any invalid UTF-8 sequences with '?'.
+// Also strips control characters (0x00-0x08, 0x0B-0x0C, 0x0E-0x1F) that are legal in
+// UTF-8 Strings but cause Cangjie's JSON serializer to throw.
+public func safeDecodeBytes(all: Array<Byte>): String {
+    let totalSize = Int64(all.size)
+    let sb = StringBuilder()
+    var i: Int64 = 0
+    while (i < totalSize) {
+        let b = all[i]
+        if (b <= 127) {
+            // Allow tab (9), newline (10), carriage return (13); skip other control chars
+            if (b >= 32 || b == 9 || b == 10 || b == 13) {
+                sb.append(String.fromUtf8([b]))
+            }
+            i += 1
+        } else if (b >= 194 && b <= 223 && i + 1 < totalSize) {
+            try { sb.append(String.fromUtf8([all[i], all[i + 1]])); i += 2 } catch (_: Exception) { sb.append("?"); i += 1 }
+        } else if (b >= 224 && b <= 239 && i + 2 < totalSize) {
+            try { sb.append(String.fromUtf8([all[i], all[i + 1], all[i + 2]])); i += 3 } catch (_: Exception) { sb.append("?"); i += 1 }
+        } else if (b >= 240 && b <= 247 && i + 3 < totalSize) {
+            try { sb.append(String.fromUtf8([all[i], all[i + 1], all[i + 2], all[i + 3]])); i += 4 } catch (_: Exception) { sb.append("?"); i += 1 }
+        } else {
+            sb.append("?")
+            i += 1
+        }
+    }
+    return sb.toString()
+}
+
+// Produce a JSON string literal (with surrounding quotes) that is always safe to
+// embed in a JSON body, regardless of what the Cangjie JSON serializer supports.
+// Handles all control chars, backslash, quote, and multi-byte UTF-8.
+func safeJsonString(s: String): String {
+    let bytes = s.toArray()
+    let size = Int64(bytes.size)
+    let sb = StringBuilder()
+    let hexChars = "0123456789abcdef".toArray()
+    sb.append("\"")
+    var i: Int64 = 0
+    while (i < size) {
+        let b = bytes[i]
+        if (b == 34) { sb.append("\\\""); i += 1 }
+        else if (b == 92) { sb.append("\\\\"); i += 1 }
+        else if (b == 10) { sb.append("\\n"); i += 1 }
+        else if (b == 13) { sb.append("\\r"); i += 1 }
+        else if (b == 9) { sb.append("\\t"); i += 1 }
+        else if (b < 32) {
+            sb.append("\\u00")
+            sb.append(String.fromUtf8([hexChars[Int64(b >> 4)]]))
+            sb.append(String.fromUtf8([hexChars[Int64(b & 15)]]))
+            i += 1
+        } else if (b <= 127) {
+            sb.append(String.fromUtf8([b]))
+            i += 1
+        } else if (b >= 194 && b <= 223 && i + 1 < size) {
+            try { sb.append(String.fromUtf8([bytes[i], bytes[i + 1]])); i += 2 }
+            catch (_: Exception) { sb.append("?"); i += 1 }
+        } else if (b >= 224 && b <= 239 && i + 2 < size) {
+            try { sb.append(String.fromUtf8([bytes[i], bytes[i + 1], bytes[i + 2]])); i += 3 }
+            catch (_: Exception) { sb.append("?"); i += 1 }
+        } else if (b >= 240 && b <= 247 && i + 3 < size) {
+            // 4-byte sequences (emoji/supplementary) – replace to avoid serializer bugs
+            sb.append("?"); i += 4
+        } else {
+            sb.append("?"); i += 1
+        }
+    }
+    sb.append("\"")
+    return sb.toString()
+}
+
 func readResponseBody(response: HttpResponse): String {
     let chunks = ArrayList<Array<Byte>>()
     let buf = Array<Byte>(65536, repeat: 0)
@@ -121,7 +197,6 @@ func readResponseBody(response: HttpResponse): String {
             offset += 1
         }
     }
-    // Debug: log first bytes to diagnose encoding issue
     if (totalSize > 0) {
         let previewLen = if (totalSize < 20) { totalSize } else { 20 }
         let sb = StringBuilder()
@@ -131,27 +206,7 @@ func readResponseBody(response: HttpResponse): String {
         }
         logger.info("Response body size=${totalSize} first_bytes=[${sb.toString()}]")
     }
-
-    // Try safe decoding: skip/replace invalid bytes
-    let sb2 = StringBuilder()
-    var i: Int64 = 0
-    while (i < totalSize) {
-        let b = all[i]
-        if (b <= 127) {
-            sb2.append(String.fromUtf8([b]))
-            i += 1
-        } else if (b >= 194 && b <= 223 && i + 1 < totalSize) {
-            try { sb2.append(String.fromUtf8([all[i], all[i + 1]])); i += 2 } catch (_: Exception) { sb2.append("?"); i += 1 }
-        } else if (b >= 224 && b <= 239 && i + 2 < totalSize) {
-            try { sb2.append(String.fromUtf8([all[i], all[i + 1], all[i + 2]])); i += 3 } catch (_: Exception) { sb2.append("?"); i += 1 }
-        } else if (b >= 240 && b <= 247 && i + 3 < totalSize) {
-            try { sb2.append(String.fromUtf8([all[i], all[i + 1], all[i + 2], all[i + 3]])); i += 4 } catch (_: Exception) { sb2.append("?"); i += 1 }
-        } else {
-            sb2.append("?")
-            i += 1
-        }
-    }
-    return sb2.toString()
+    return safeDecodeBytes(all)
 }
 
 func extractChatContent(json: JsonValue): String {

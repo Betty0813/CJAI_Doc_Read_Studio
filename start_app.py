@@ -13,7 +13,19 @@ import os
 import threading
 import queue
 import shutil
+import socket
 from datetime import datetime
+
+
+def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+    """Check if a port is already in use (something is listening)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.settimeout(1)
+            s.connect((host, port))
+            return True
+        except (OSError, ConnectionRefusedError):
+            return False
 
 class AppLauncher:
     def __init__(self, config_file="config.json"):
@@ -134,10 +146,17 @@ window.APP_CONFIG = {{
     def start_backend(self):
         """Start the backend server"""
         backend_config = self.config['backend']
-        
+        port = int(backend_config['port'])
+
+        if is_port_in_use(port):
+            print(f"⚠️  Port {port} is already in use (e.g. previous run still active).")
+            print(f"   Please stop the other process or wait a few seconds and try again.")
+            print(f"   On Windows: netstat -ano | findstr :{port}")
+            return False
+
         print(f"🔧 Starting backend server...")
         print(f"   Host: {backend_config['host']}")
-        print(f"   Port: {backend_config['port']}")
+        print(f"   Port: {port}")
         
         cmd = [
             sys.executable, "-m", "uvicorn", 
@@ -239,7 +258,7 @@ except Exception as e:
             print(f"❌ Failed to start frontend: {e}")
             return False
     
-    def wait_for_backend(self, timeout=30):
+    def wait_for_backend(self, timeout=60):
         """Wait for backend to be ready"""
         try:
             import requests
@@ -380,7 +399,7 @@ except Exception as e:
                 return 1
             
             # Wait for backend to be ready
-            time.sleep(2)  # Give it a moment to start
+            time.sleep(5)  # Give backend time to load (imports, etc.)
             
             # Check if requests is available for health check
             try:

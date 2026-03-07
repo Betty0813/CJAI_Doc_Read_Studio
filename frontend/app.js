@@ -124,6 +124,33 @@ class DocReadStudio {
             this.log('info', 'WebSocket disconnected manually');
         }
     }
+
+    /** Wait for WebSocket to be open (for streaming), with timeout. Resolves when ready. */
+    waitForWebSocketOpen(timeoutMs = 5000) {
+        return new Promise((resolve, reject) => {
+            if (!this.websocket) {
+                reject(new Error('No WebSocket'));
+                return;
+            }
+            if (this.websocket.readyState === WebSocket.OPEN) {
+                resolve();
+                return;
+            }
+            const deadline = Date.now() + timeoutMs;
+            const check = () => {
+                if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                    resolve();
+                    return;
+                }
+                if (Date.now() >= deadline) {
+                    reject(new Error('WebSocket open timeout'));
+                    return;
+                }
+                setTimeout(check, 50);
+            };
+            check();
+        });
+    }
     
     handleWebSocketMessage(message) {
         this.log('debug', 'Received WebSocket message', { type: message.type });
@@ -346,6 +373,17 @@ class DocReadStudio {
             conversationDiv.appendChild(element);
             conversationDiv.scrollTop = conversationDiv.scrollHeight;
         }
+    }
+
+    /** 在对话区插入「辩论阶段」分隔条，体现多 Agent 博弈过程 */
+    insertDebatePhaseDivider() {
+        const conversationDiv = this.getConversationDiv();
+        if (!conversationDiv) return;
+        const divider = document.createElement('div');
+        divider.className = 'debate-phase-divider';
+        divider.textContent = '辩论阶段：各角色针对他人观点进行支持、质疑与补充';
+        conversationDiv.appendChild(divider);
+        conversationDiv.scrollTop = conversationDiv.scrollHeight;
     }
 
     clearConversation() {
@@ -643,6 +681,20 @@ class DocReadStudio {
                 console.log('Close action plan clicked!');
                 this.closeActionPlan();
             });
+        }
+        
+        // Run document improvement (Agent Loop) button
+        const runAgentLoopBtn = document.getElementById('runAgentLoopBtn');
+        if (runAgentLoopBtn) {
+            runAgentLoopBtn.addEventListener('click', () => this.runAgentLoop());
+        }
+        const closeAgentLoopReportBtn = document.getElementById('closeAgentLoopReportBtn');
+        if (closeAgentLoopReportBtn) {
+            closeAgentLoopReportBtn.addEventListener('click', () => this.closeAgentLoopReport());
+        }
+        const downloadImprovedDocBtn = document.getElementById('downloadImprovedDocBtn');
+        if (downloadImprovedDocBtn) {
+            downloadImprovedDocBtn.addEventListener('click', () => this.downloadImprovedDocument());
         }
         
         // Enter key in prompt input
@@ -1635,10 +1687,15 @@ class DocReadStudio {
             const result = await response.json();
             this.sessionId = result.session_id;
             
-            // Connect to WebSocket for real-time updates
+            // Connect to WebSocket so we can receive messages one-by-one; wait for open before sending
             this.connectWebSocket(this.sessionId);
+            try {
+                await this.waitForWebSocketOpen(5000);
+            } catch (e) {
+                this.log('warn', 'WebSocket not open in time, continuing anyway', { error: e.message });
+            }
             
-            // Now send the initial prompt to trigger agent responses
+            // Send the initial prompt; backend will stream each agent response via WebSocket
             const promptResponse = await fetch(`${this.apiUrl}/sessions/${this.sessionId}/prompt`, {
                 method: 'POST',
                 headers: {
@@ -1658,7 +1715,11 @@ class DocReadStudio {
             // Clear the agents thinking animation
             this.clearAllTypingIndicators();
             
-            // Agent responses will be added via WebSocket, so we don't need to add them here
+            // Always render from HTTP response so first input shows even if WebSocket wasn't ready yet.
+            // (Backend broadcasts after the request completes; WebSocket may connect after that.)
+            if (promptResult.conversation && promptResult.conversation.length > 0) {
+                this.displayConversation(promptResult.conversation);
+            }
             this.showDocumentInfo();
             this.updateControlsVisibility();
             this.updateStartButtonState();
@@ -1705,9 +1766,13 @@ class DocReadStudio {
             
             const result = await response.json();
             
-            // Clear thinking indicators - responses will come via WebSocket
+            // Clear thinking indicators
             this.clearAllTypingIndicators();
             
+            // Render full conversation from response so messages always show (don't rely only on WebSocket)
+            if (result.conversation && result.conversation.length > 0) {
+                this.displayConversation(result.conversation);
+            }
             this.updateControlsVisibility();
             
         } catch (error) {
@@ -1839,6 +1904,8 @@ class DocReadStudio {
         const summarySeparator = document.getElementById('summarySeparator');
         const exportMarkdownBtn = document.getElementById('exportMarkdownBtn');
         const exportPdfBtn = document.getElementById('exportPdfBtn');
+        const runAgentLoopBtn = document.getElementById('runAgentLoopBtn');
+        const agentLoopControls = document.querySelector('.agent-loop-controls');
         
         if (!this.sessionId) {
             regenerateBtn.classList.add('hidden');
@@ -1849,6 +1916,8 @@ class DocReadStudio {
             summarySeparator.classList.add('hidden');
             exportMarkdownBtn.classList.add('hidden');
             exportPdfBtn.classList.add('hidden');
+            if (runAgentLoopBtn) runAgentLoopBtn.classList.add('hidden');
+            if (agentLoopControls) agentLoopControls.classList.add('hidden');
             return;
         }
         
@@ -1865,6 +1934,8 @@ class DocReadStudio {
             summarySeparator.classList.remove('hidden');
             exportMarkdownBtn.classList.remove('hidden');
             exportPdfBtn.classList.remove('hidden');
+            if (runAgentLoopBtn) runAgentLoopBtn.classList.remove('hidden');
+            if (agentLoopControls) agentLoopControls.classList.remove('hidden');
         } else {
             regenerateBtn.classList.add('hidden');
             revertBtn.classList.add('hidden');
@@ -1874,6 +1945,8 @@ class DocReadStudio {
             summarySeparator.classList.add('hidden');
             exportMarkdownBtn.classList.add('hidden');
             exportPdfBtn.classList.add('hidden');
+            if (runAgentLoopBtn) runAgentLoopBtn.classList.add('hidden');
+            if (agentLoopControls) agentLoopControls.classList.add('hidden');
         }
     }
     
@@ -1901,10 +1974,16 @@ class DocReadStudio {
         document.getElementById('summarySeparator').classList.add('hidden');
         document.getElementById('exportMarkdownBtn').classList.add('hidden');
         document.getElementById('exportPdfBtn').classList.add('hidden');
+        const runAgentLoopBtn = document.getElementById('runAgentLoopBtn');
+        const agentLoopControls = document.querySelector('.agent-loop-controls');
+        if (runAgentLoopBtn) runAgentLoopBtn.classList.add('hidden');
+        if (agentLoopControls) agentLoopControls.classList.add('hidden');
         
-        // Hide action plan section
+        // Hide action plan and agent loop sections
         document.getElementById('actionPlanSection').classList.add('hidden');
+        document.getElementById('agentLoopReportSection').classList.add('hidden');
         this.actionPlanData = null;
+        this.agentLoopReportData = null;
         
         const existingDocInfo = document.getElementById('documentInfo');
         if (existingDocInfo) {
@@ -2068,7 +2147,158 @@ class DocReadStudio {
         actionPlanSection.classList.add('hidden');
         this.log('info', 'Action plan closed');
     }
-    
+
+    async runAgentLoop() {
+        if (!this.sessionId) {
+            this.showStatus('没有可用会话', 'error');
+            return;
+        }
+        const runBtn = document.getElementById('runAgentLoopBtn');
+        const statusEl = document.getElementById('agentLoopStatus');
+        if (runBtn) runBtn.disabled = true;
+        if (statusEl) statusEl.textContent = '正在运行文档改进…';
+        this.log('info', 'Running document improvement agent loop');
+        try {
+            const response = await fetch(`${this.apiUrl}/sessions/${this.sessionId}/run-agent-loop`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ max_iterations: 3 })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.detail || response.statusText || '请求失败');
+            }
+            this.agentLoopReportData = data;
+            this.displayAgentLoopReport(data);
+            if (statusEl) statusEl.textContent = `已完成，共 ${data.total_iterations || 0} 轮迭代`;
+            this.showStatus('文档改进完成', 'success');
+        } catch (err) {
+            this.log('error', 'Agent loop failed', { error: err.message });
+            if (statusEl) statusEl.textContent = '';
+            this.showStatus('文档改进失败: ' + err.message, 'error');
+        } finally {
+            if (runBtn) runBtn.disabled = false;
+        }
+    }
+
+    displayAgentLoopReport(report) {
+        const section = document.getElementById('agentLoopReportSection');
+        const content = document.getElementById('agentLoopReportContent');
+        const downloadBtn = document.getElementById('downloadImprovedDocBtn');
+        if (!section || !content) return;
+        const improvements = report.improvements || {};
+        const history = report.iteration_history || [];
+        let html = '<div class="agent-loop-report">';
+
+        html += `<p><strong>状态:</strong> ${report.status || 'completed'} | <strong>迭代次数:</strong> ${report.total_iterations || 0} | <strong>收敛:</strong> ${report.converged ? '是' : '否'}</p>`;
+        if (report.total_improvement_score != null) {
+            html += `<p><strong>总体改进分数:</strong> ${report.total_improvement_score.toFixed(1)}</p>`;
+        }
+
+        // 改进指标
+        if (Object.keys(improvements).length) {
+            html += '<h4>改进指标</h4><ul>';
+            for (const [k, v] of Object.entries(improvements)) {
+                if (k !== 'converged' && typeof v === 'number') html += `<li>${k}: ${v.toFixed(1)}</li>`;
+            }
+            html += '</ul>';
+        }
+
+        // 迭代历史 — 含 ReAct 推理链
+        if (history.length) {
+            html += '<h4>迭代历史 (ReAct 推理链)</h4>';
+            history.forEach((iter) => {
+                html += `<div style="margin-bottom:16px; padding:12px; background:#f8f9fa; border-radius:8px; border-left:3px solid #0d6efd;">`;
+                html += `<strong>第 ${iter.iteration} 轮</strong>`;
+                const ref = iter.reflection || {};
+                if (ref.overall_improvement_score != null) {
+                    html += ` | <strong>本轮改进分数: ${Number(ref.overall_improvement_score).toFixed(1)}</strong>`;
+                }
+                if (iter.actions && iter.actions.length) html += ` | 工具调用: ${iter.actions.join(', ')}`;
+                if (iter.error) html += ` | <span style="color:red">错误: ${iter.error}</span>`;
+
+                // ReAct 推理步骤
+                const steps = iter.react_steps || [];
+                if (steps.length) {
+                    html += '<div style="margin-top:8px;">';
+                    steps.forEach((s) => {
+                        html += '<div style="margin:4px 0; padding:6px 8px; background:white; border-radius:4px; font-size:13px;">';
+                        if (s.thought) html += `<div style="color:#495057;"><strong>Thought:</strong> ${this.escapeHtml((s.thought || '').slice(0, 200))}</div>`;
+                        if (s.action) html += `<div style="color:#0d6efd;"><strong>Action:</strong> ${s.action}</div>`;
+                        if (s.observation) html += `<div style="color:#198754;"><strong>Observe:</strong> ${this.escapeHtml((s.observation || '').slice(0, 200))}</div>`;
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                }
+
+                // 反思
+                if (iter.reflection && iter.reflection.reasoning) {
+                    html += `<div style="margin-top:6px; font-size:13px; color:#6c757d;"><strong>Reflection:</strong> ${this.escapeHtml(iter.reflection.reasoning)}</div>`;
+                }
+
+                // 本轮回调后的各维度分数（非改进值；改进值见上方「本轮改进分数」）
+                if (iter.metrics) {
+                    const metricStr = Object.entries(iter.metrics).map(([k,v]) => `${k}: ${typeof v === 'number' ? v.toFixed(1) : v}`).join(', ');
+                    html += `<div style="margin-top:4px; font-size:12px; color:#6c757d;">本轮回调后维度分数: ${metricStr}</div>`;
+                }
+                html += '</div>';
+            });
+        }
+
+        // 记忆统计
+        if (report.memory_stats) {
+            html += `<h4>长期记忆</h4><p style="font-size:13px; color:#6c757d;">共 ${report.memory_stats.total_entries || 0} 条记忆`;
+            if (report.memory_stats.categories) {
+                html += ` (${Object.entries(report.memory_stats.categories).map(([k,v]) => `${k}: ${v}`).join(', ')})`;
+            }
+            html += '</p>';
+        }
+
+        // 文档预览
+        const preview = report.final_document_preview || report.final_document || '';
+        if (preview) {
+            html += '<h4>改进后文档预览</h4><pre style="white-space:pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px; max-height:300px; overflow:auto;">';
+            html += this.escapeHtml(preview.slice(0, 2000));
+            if (preview.length > 2000) html += '\n...(更多内容请下载)';
+            html += '</pre>';
+        }
+        html += '</div>';
+        content.innerHTML = html;
+        section.classList.remove('hidden');
+        if (downloadBtn) downloadBtn.style.display = 'inline-block';
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    closeAgentLoopReport() {
+        const section = document.getElementById('agentLoopReportSection');
+        if (section) section.classList.add('hidden');
+        this.log('info', 'Agent loop report closed');
+    }
+
+    async downloadImprovedDocument() {
+        if (!this.sessionId || !this.agentLoopReportData) {
+            this.showStatus('没有可下载的改进文档', 'error');
+            return;
+        }
+        try {
+            const response = await fetch(`${this.apiUrl}/sessions/${this.sessionId}/improved-document`);
+            if (!response.ok) throw new Error(response.statusText);
+            const data = await response.json();
+            const content = data.content || '';
+            const filename = `improved_document_${this.sessionId.slice(0, 8)}.md`;
+            this.downloadMarkdownFile(content, filename);
+            this.showStatus('改进文档已下载', 'success');
+        } catch (err) {
+            this.showStatus('下载失败: ' + err.message, 'error');
+        }
+    }
+
     async exportConversation(format) {
         if (!this.sessionId) {
             this.showStatus('No active session to export', 'error');
@@ -2170,34 +2400,39 @@ class DocReadStudio {
     addMessageToConversation(message, withTypingEffect = false) {
         const conversationDiv = this.getConversationDiv();
         if (!conversationDiv) return;
-        
-        // Debug: Verify we have the correct conversation element
-        console.log('🔍 Adding message to conversation element:', {
-            id: conversationDiv.id,
-            className: conversationDiv.className,
-            parentElement: conversationDiv.parentElement?.className || 'no parent',
-            parentId: conversationDiv.parentElement?.id || 'no parent id'
-        });
 
         const messageDiv = this.createElement('div', `message ${message.type}`);
-        
+
+        // 辩论消息：在第一条辩论前插入「辩论阶段」分隔条
+        if (message.type === 'agent' && message.is_debate) {
+            const last = conversationDiv.lastElementChild;
+            const isLastDebate = last && last.classList.contains('message-debate');
+            const isLastDivider = last && last.classList.contains('debate-phase-divider');
+            if (!isLastDebate && !isLastDivider) {
+                this.insertDebatePhaseDivider();
+            }
+            messageDiv.classList.add('message-debate');
+        }
+
         let header = '';
         let avatarText = '';
         if (message.type === 'user') {
-            header = message.content; // Show the actual message text as header
+            header = message.content;
             avatarText = 'U';
         } else if (message.type === 'agent') {
-            header = `${message.agent_name}`;
-            const roleText = message.role ? ` (${message.role})` : '';
-            avatarText = message.agent_name.charAt(0).toUpperCase();
+            const displayName = (message.agent_name || '').replace(/\s*\(Debate\)\s*$/, '');
+            header = displayName;
+            avatarText = displayName.charAt(0).toUpperCase() || 'A';
+            if (message.is_debate) {
+                header += ' <span class="debate-badge">辩论</span>';
+            }
         } else {
             header = 'System';
             avatarText = 'S';
         }
-        
-        const timestamp = new Date(message.timestamp).toLocaleTimeString();
-        
-        // Create avatar and bubble structure
+
+        const timestamp = message.timestamp ? new Date(message.timestamp).toLocaleTimeString() : '';
+
         if (message.type === 'system') {
             messageDiv.innerHTML = `
                 <div class="message-bubble">
@@ -2209,7 +2444,6 @@ class DocReadStudio {
                 </div>
             `;
         } else if (message.type === 'user') {
-            // For user messages, show content in header and just the avatar
             messageDiv.innerHTML = `
                 <div class="message-avatar">${avatarText}</div>
                 <div class="message-bubble">
@@ -2220,9 +2454,7 @@ class DocReadStudio {
                 </div>
             `;
         } else {
-            // For agent messages, show normal structure with separate content
             const roleInfo = message.type === 'agent' && message.role ? `<div style="font-size: 11px; opacity: 0.7; margin-bottom: 2px;">${message.role}</div>` : '';
-            
             messageDiv.innerHTML = `
                 <div class="message-avatar">${avatarText}</div>
                 <div class="message-bubble">
@@ -2235,17 +2467,15 @@ class DocReadStudio {
                 </div>
             `;
         }
-        
-        // Add subtle entrance animation for agent messages
+
         if (withTypingEffect && message.type === 'agent') {
             messageDiv.style.opacity = '0';
             messageDiv.style.transform = 'translateY(10px)';
             messageDiv.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
         }
-        
+
         this.appendToConversation(messageDiv);
-        
-        // Trigger entrance animation
+
         if (withTypingEffect && message.type === 'agent') {
             setTimeout(() => {
                 messageDiv.style.opacity = '1';

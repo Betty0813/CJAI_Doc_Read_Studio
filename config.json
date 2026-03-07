@@ -23,31 +23,25 @@
   "models": {
     "available": [
       {
-        "value": "nova-micro",
-        "label": "Micro (Fast)",
-        "description": "Fastest, Basic",
-        "bedrock_id": "us.amazon.nova-micro-v1:0"
+        "value": "gpt-4o-mini",
+        "label": "GPT-4o Mini (Fast)",
+        "description": "Fastest, Most Cost-Effective",
+        "model_id": "gpt-4o-mini"
       },
       {
-        "value": "nova-lite",
-        "label": "Lite (Balanced)",
-        "description": "Balanced",
-        "bedrock_id": "us.amazon.nova-lite-v1:0"
+        "value": "gpt-4o",
+        "label": "GPT-4o (Balanced)",
+        "description": "Balanced Performance & Cost",
+        "model_id": "gpt-4o"
       },
       {
-        "value": "nova-pro",
-        "label": "Pro (Advanced)",
-        "description": "Advanced",
-        "bedrock_id": "us.amazon.nova-pro-v1:0"
-      },
-      {
-        "value": "nova-premier",
-        "label": "Premier (Best)",
-        "description": "Best Quality",
-        "bedrock_id": "us.amazon.nova-premier-v1:0"
+        "value": "gpt-4-turbo",
+        "label": "GPT-4 Turbo (Advanced)",
+        "description": "Advanced Reasoning",
+        "model_id": "gpt-4-turbo"
       }
     ],
-    "default_team": "nova-lite",
-    "default_summary": "nova-lite"
+    "default_team": "gpt-4o-mini",
+    "default_summary": "gpt-4o"
   }
 }

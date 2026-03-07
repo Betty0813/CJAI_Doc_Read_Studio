@@ -4,12 +4,16 @@ import time
 import os
 import json
 from datetime import datetime
-from typing import List, Dict
-from strands import Agent
+from typing import List, Dict, Optional, Callable, Awaitable
+from openai import OpenAI, AsyncOpenAI
 from .document_parser import parse_document
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from .token_tracker import token_tracker
 import structlog
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Load configuration
 def load_config():
@@ -34,17 +38,37 @@ logger = structlog.get_logger(__name__)
     reraise=True
 )
 async def invoke_agent_with_retry(
-    agent: Agent,
-    prompt: str,
+    system_prompt: str,
+    user_prompt: str,
     agent_name: str = "unknown",
     session_id: str = None,
     model: str = None
 ) -> tuple[str, float]:
-    """Invoke agent with retry logic and performance tracking."""
+    """Invoke OpenAI compatible API with retry logic and performance tracking."""
     start_time = time.time()
     try:
-        response = await agent.invoke_async(prompt)
-        response_text = str(response) if hasattr(response, '__str__') else response
+        # Initialize OpenAI client with custom base URL if provided
+        api_key = os.environ.get("OPENAI_API_KEY")
+        base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url=base_url
+        )
+
+        response = client.chat.completions.create(
+            model=model or "gpt-4o-mini",
+            max_tokens=2048,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+
+        response_text = response.choices[0].message.content
         response_time = time.time() - start_time
 
         # Log performance metrics
@@ -53,7 +77,9 @@ async def invoke_agent_with_retry(
             agent_name=agent_name,
             response_time_seconds=round(response_time, 2),
             response_length=len(response_text),
-            tokens_per_second=round(len(response_text.split()) / response_time, 2) if response_time > 0 else 0
+            tokens_per_second=round(len(response_text.split()) / response_time, 2) if response_time > 0 else 0,
+            input_tokens=response.usage.prompt_tokens,
+            output_tokens=response.usage.completion_tokens
         )
 
         # Track costs if session and model info provided
@@ -62,7 +88,7 @@ async def invoke_agent_with_retry(
                 session_id=session_id,
                 agent_name=agent_name,
                 model=model,
-                input_text=prompt,
+                input_text=user_prompt,
                 output_text=response_text,
                 response_time=response_time
             )
@@ -79,20 +105,20 @@ async def invoke_agent_with_retry(
         raise
 
 def get_bedrock_model_id(model_name: str) -> str:
-    """Map user-friendly model names to Bedrock model IDs from config."""
+    """Map user-friendly model names to OpenAI compatible model IDs from config."""
     models = config.get("models", {}).get("available", [])
 
-    # Create a mapping from model values to bedrock_ids
-    model_mapping = {model["value"]: model["bedrock_id"] for model in models}
+    # Create a mapping from model values to model_ids
+    model_mapping = {model["value"]: model["model_id"] for model in models}
 
-    # Get the bedrock_id for the given model_name, with fallback
-    default_model = config.get("models", {}).get("default_team", "nova-lite")
-    default_bedrock_id = model_mapping.get(default_model, "us.amazon.nova-lite-v1:0")
+    # Get the model_id for the given model_name, with fallback
+    default_model = config.get("models", {}).get("default_team", "gpt-4o-mini")
+    default_model_id = model_mapping.get(default_model, "gpt-4o-mini")
 
-    return model_mapping.get(model_name, default_bedrock_id)
+    return model_mapping.get(model_name, default_model_id)
 
-async def create_agent(member, documents_content: str, conversation_history: str, custom_system_prompt: str = None) -> Agent:
-    """Create a Strands Agent for a team member."""
+async def create_agent(member, documents_content: str, conversation_history: str, custom_system_prompt: str = None) -> dict:
+    """Create a Claude agent configuration for a team member."""
 
     # Special handling for Team Moderator
     if member.name == "Team Moderator":
@@ -219,13 +245,12 @@ Your response should provide actionable, constructive feedback that helps improv
 
     bedrock_model_id = get_bedrock_model_id(member.model)
 
-    agent = Agent(
-        name=member.name,
-        system_prompt=system_prompt,
-        model=bedrock_model_id
-    )
-
-    return agent
+    # Return agent configuration instead of Agent object
+    return {
+        "name": member.name,
+        "system_prompt": system_prompt,
+        "model": bedrock_model_id
+    }
 
 def parse_multiple_documents(documents) -> str:
     """Parse multiple documents and wrap them in XML tags with filenames."""
@@ -251,8 +276,15 @@ ERROR: Could not parse document - {str(e)}
 
     return documents_content.strip()
 
-async def run_discussion_round(session, documents, prompt: str) -> List[Dict]:
-    """Run a discussion round with all team members using A2A communication."""
+async def run_discussion_round(
+    session,
+    documents,
+    prompt: str,
+    *,
+    on_agent_start: Optional[Callable[[str], Awaitable[None]]] = None,
+    on_agent_response: Optional[Callable[[Dict], Awaitable[None]]] = None,
+) -> List[Dict]:
+    """Run a discussion round with all team members. Callbacks allow streaming each response as it's ready."""
     try:
         # Parse all documents and wrap in XML tags
         documents_content = parse_multiple_documents(documents)
@@ -286,23 +318,18 @@ async def run_discussion_round(session, documents, prompt: str) -> List[Dict]:
         # Shuffle order for random responses (only regular agents)
         random.shuffle(regular_agents)
 
-        # Prepare agent tasks for concurrent execution
         async def get_agent_response(agent, member):
             try:
-                # Create a focused prompt for this agent
                 agent_prompt = f"""
 Current discussion prompt: {prompt}
 
 Please provide your perspective on this document and the current discussion from your role as {member.role}.
 Focus on actionable feedback and insights specific to your expertise.
 """
-
-                # Use agent.invoke_async() method with retry logic and performance tracking
-                bedrock_model_id = get_bedrock_model_id(member.model)
+                claude_model_id = get_bedrock_model_id(member.model)
                 response_text, response_time = await invoke_agent_with_retry(
-                    agent, agent_prompt, member.name, session.session_id, bedrock_model_id
+                    agent["system_prompt"], agent_prompt, member.name, session.session_id, claude_model_id
                 )
-
                 return {
                     "type": "agent",
                     "agent_id": member.id,
@@ -314,7 +341,6 @@ Focus on actionable feedback and insights specific to your expertise.
                     "response_time_seconds": round(response_time, 2),
                     "response_length": len(response_text)
                 }
-
             except Exception as e:
                 print(f"Error getting response from agent {member.name}: {str(e)}")
                 return {
@@ -327,27 +353,44 @@ Focus on actionable feedback and insights specific to your expertise.
                     "timestamp": datetime.now().isoformat()
                 }
 
-        # Execute regular agent responses concurrently first
-        regular_tasks = [get_agent_response(agent, member) for agent, member in regular_agents]
-        regular_responses = await asyncio.gather(*regular_tasks)
+        # Run regular agents one by one so we can stream each response as it's ready
+        regular_responses = []
+        for agent, member in regular_agents:
+            if on_agent_start:
+                await on_agent_start(member.name)
+            response = await get_agent_response(agent, member)
+            regular_responses.append(response)
+            if on_agent_response:
+                await on_agent_response(response)
 
         # Now run the Team Moderator after all other agents have responded
         moderator_response = None
         if moderator_agent and moderator_member:
-            # Update conversation history with the regular agent responses for moderator context
+            if on_agent_start:
+                await on_agent_start(moderator_member.name)
             updated_conversation_history = conversation_history
             for response in regular_responses:
                 updated_conversation_history += f"\n<agent_message agent='{response['agent_name']}' role='{response['role']}'>{response['content']}</agent_message>"
-
-            # Recreate moderator agent with updated conversation history
             moderator_agent = await create_agent(moderator_member, documents_content, updated_conversation_history)
-
             moderator_response = await get_agent_response(moderator_agent, moderator_member)
+            if moderator_response and on_agent_response:
+                await on_agent_response(moderator_response)
 
-        # Combine responses: regular agents first, then moderator
-        all_responses = regular_responses
+        all_responses = list(regular_responses)
         if moderator_response:
             all_responses.append(moderator_response)
+
+        # ---- Multi-Agent Debate Round (stream each debate response) ----
+        try:
+            debate_responses = await run_debate_round(
+                session, documents, all_responses, prompt,
+                on_agent_start=on_agent_start,
+                on_agent_response=on_agent_response,
+            )
+            if debate_responses:
+                all_responses.extend(debate_responses)
+        except Exception as de:
+            logger.warning("Debate round failed (non-critical)", error=str(de))
 
         return all_responses
 
@@ -360,8 +403,110 @@ Focus on actionable feedback and insights specific to your expertise.
         }]
 
 
+async def run_debate_round(
+    session,
+    documents,
+    initial_responses: List[Dict],
+    original_prompt: str,
+    *,
+    on_agent_start: Optional[Callable[[str], Awaitable[None]]] = None,
+    on_agent_response: Optional[Callable[[Dict], Awaitable[None]]] = None,
+) -> List[Dict]:
+    """
+    Multi-Agent Debate: 每个 Agent 看到其他 Agent 的回复后，
+    可以挑战、支持或完善观点，形成真正的多 Agent 对话。
+    """
+    documents_content = parse_multiple_documents(documents)
 
-async def generate_actionable_summary(session, documents, model: str = "nova-pro") -> str:
+    others_text = ""
+    for resp in initial_responses:
+        if resp.get("type") != "agent":
+            continue
+        others_text += (
+            f"\n--- {resp['agent_name']} ({resp.get('role', '')}) ---\n"
+            f"{resp['content']}\n"
+        )
+
+    if not others_text.strip():
+        return []
+
+    debate_members = [m for m in session.team_members if m.name != "Team Moderator"]
+    if not debate_members:
+        return []
+
+    debate_system = """You are {name}, participating in a multi-agent debate about document review.
+
+Your role: {role}
+
+OTHER AGENTS' INITIAL FEEDBACK:
+{others}
+
+DOCUMENTS:
+{docs}
+
+YOUR TASK — DEBATE ROUND:
+1. Read the other agents' feedback carefully.
+2. CHALLENGE points you disagree with — explain why, citing evidence from the document.
+3. SUPPORT points you strongly agree with — add your perspective or additional evidence.
+4. REFINE suggestions by other agents — make them more specific or actionable.
+5. Raise any NEW insights triggered by reading others' feedback.
+
+RULES:
+- Address other agents BY NAME when responding to their points.
+- Be constructive — disagreement is valuable when backed by reasoning.
+- Keep it concise (1-2 paragraphs).
+- Start with "## Debate Response" as your heading.
+- Format your response as:
+  ### Agreements
+  ### Challenges
+  ### New Insights"""
+
+    async def get_debate_response(member):
+        try:
+            system = debate_system.format(
+                name=member.name,
+                role=member.role,
+                others=others_text[:6000],
+                docs=documents_content[:4000],
+            )
+            model_id = get_bedrock_model_id(member.model)
+            text, resp_time = await invoke_agent_with_retry(
+                system,
+                f"Original discussion prompt: {original_prompt}\n\nProvide your debate response.",
+                f"{member.name} (debate)",
+                session.session_id,
+                model_id,
+            )
+            return {
+                "type": "agent",
+                "agent_id": member.id,
+                "agent_name": f"{member.name} (Debate)",
+                "role": member.role,
+                "model": member.model,
+                "content": text,
+                "timestamp": datetime.now().isoformat(),
+                "response_time_seconds": round(resp_time, 2),
+                "response_length": len(text),
+                "is_debate": True,
+            }
+        except Exception as e:
+            logger.warning(f"Debate response failed for {member.name}", error=str(e))
+            return None
+
+    # Run debate agents one by one so we can stream each response
+    results = []
+    for member in debate_members:
+        if on_agent_start:
+            await on_agent_start(f"{member.name} (debate)")
+        r = await get_debate_response(member)
+        if r is not None:
+            results.append(r)
+            if on_agent_response:
+                await on_agent_response(r)
+    return results
+
+
+async def generate_actionable_summary(session, documents, model: str = "claude-3-haiku") -> str:
     """Generate an actionable summary of all suggestions from the conversation."""
     try:
         # Parse all documents and wrap in XML tags
@@ -427,19 +572,14 @@ Use proper markdown formatting:
 
 Output clean markdown that can be directly saved as a .md file."""
 
-        # Create the summary agent with selected model
-        bedrock_model_id = get_bedrock_model_id(model)
-        summary_agent = Agent(
-            name="ActionableSummaryAgent",
-            system_prompt=system_prompt,
-            model=bedrock_model_id
-        )
+        # Create the summary configuration with selected model
+        claude_model_id = get_bedrock_model_id(model)
 
         # Generate the summary with retry logic and performance tracking
         summary_prompt = "Please generate the actionable summary in markdown format as specified."
-        bedrock_model_id = get_bedrock_model_id(model)
+        claude_model_id = get_bedrock_model_id(model)
         summary_markdown, summary_time = await invoke_agent_with_retry(
-            summary_agent, summary_prompt, "ActionableSummaryAgent", session.session_id, bedrock_model_id
+            system_prompt, summary_prompt, "ActionableSummaryAgent", session.session_id, claude_model_id
         )
 
         logger.info(

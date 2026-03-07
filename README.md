@@ -1,227 +1,144 @@
 # AI Doc Read Studio
 
-When teams gather together to review important documents, magic happens. Different perspectives collide, expertise mingles, and insights emerge that no single person could have discovered alone.
+基于多 AI 角色的文档审阅与改进应用：上传文档后，多个“专家”角色（产品、技术、测试、设计等）参与讨论与辩论，并可根据讨论结果自动改进文档。
 
-This project uses [Strands Agents](https://strandsagents.com/latest/) and [Amazon Nova](https://nova.amazon.com) models to build **AI Doc Read Studio**, a web-based collaborative document review application using AI agents to simulate a discussion.
+---
 
-You can use it to prepare for a meeting or just get feedback on what you're working on.
+## 功能概览
 
-<img width="1406" height="1307" alt="ai-doc-read-studio" src="https://github.com/user-attachments/assets/a61a7263-27a7-4d12-9785-834029dfc1cc" />
+- **文档上传**：支持 TXT、Markdown、Word（.docx）、PDF
+- **多角色讨论**：配置不同 AI 角色（产品经理、技术负责人、QA、UX、主持人等），围绕文档逐条发言
+- **辩论轮**：首轮讨论后，各角色可对他人观点进行挑战、补充或共识，形成多轮对话
+- **实时流式输出**：通过 WebSocket 一条条展示回复，支持“正在输入”状态
+- **可执行摘要**：根据讨论生成 Markdown 行动清单
+- **文档改进 Agent**：根据讨论与辩论中的建议，用 ReAct + 工具（术语表、摘要、案例、图表说明等）自动改文档，多轮验证与反思后输出改进版
 
-## Features
+---
 
-- **Document Upload**: Support for TXT, Markdown, Word (.docx), and PDF files
-- **Team Management**: Configure AI agents with custom roles and Nova model selection
-- **Multi-Agent Conversations**: Intelligent discussions using Strands Agents framework
-- **Real-time Updates**: WebSocket-based live conversation updates
-- **Export Options**: Download conversations and action plans as Markdown or PDF
-- **Model Selection**: Choose from Amazon Nova Micro, Lite, Pro, or Premier models
+## 技术栈
 
-## Quick Start
+| 层级     | 技术说明 |
+|----------|----------|
+| 后端     | FastAPI，REST + WebSocket |
+| AI 调用  | OpenAI 兼容 API（可配置 `OPENAI_BASE_URL` 使用其他网关） |
+| 文档改进 | ReAct + Function Calling + 反思 + 长期记忆 |
+| 前端     | 原生 JS，单页应用 |
 
-### Prerequisites
-- Python 3.10+ 
-- [UV package manager](https://docs.astral.sh/uv/) - fastest Python package installer
-- AWS credentials configured for Bedrock access
+---
 
-### Quick Start
+## 快速开始
+
+### 环境要求
+
+- Python 3.10+
+- [UV](https://docs.astral.sh/uv/) 包管理
+
+### 安装与运行
 
 ```bash
-git clone https://github.com/danilop/ai-doc-read-studio
-cd ai-doc-read-studio
-# Simplified way to install dependencies and start both backend and frontend servers
-./start.sh
-```
+git clone https://github.com/ChailynCui/compet_agent.git
+cd compet_agent
 
-Open the Web Interface: http://localhost:3000
+# 安装依赖
+uv sync
 
-### Installation
+# 配置环境变量：复制示例后编辑 .env，填入 OPENAI_API_KEY
+cp .env.example .env
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/danilop/ai-doc-read-studio
-   cd ai-doc-read-studio
-   ```
-
-2. **Install dependencies with UV:**
-   ```bash
-   uv sync
-   ```
-
-### Running the Application
-
-#### 🚀 Recommended: Unified Startup
-```bash
-# Start both backend and frontend servers
+# 一键启动前后端
 uv run python start_app.py
 ```
 
-#### Alternative: Start Servers Separately
+- **前端**：<http://localhost:3000>  
+- **后端 API 文档**：<http://localhost:8000/docs>
 
-**Backend:**
+### 环境变量（.env）
+
 ```bash
-uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+# 必填：OpenAI 兼容 API 的 Key
+OPENAI_API_KEY=your-api-key
+
+# 可选：API 基地址，默认 https://api.openai.com/v1
+OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
-**Frontend:**
-```bash
-uv run python -m http.server 3000 --directory frontend
-```
+可将 `OPENAI_BASE_URL` 指向其他兼容 OpenAI 的网关（如各类中转或 Bedrock 代理）。
 
-### Access the Application
+---
 
-- **Web Interface**: http://localhost:3000
-- **API Documentation**: http://localhost:8000/docs
-- **Backend API**: http://localhost:8000
+## 使用流程
 
-## Usage
+1. **上传文档**：在左侧上传 TXT/MD/DOCX/PDF（最多 10 个）。
+2. **配置团队**：添加成员并设置姓名、角色、模型；可加载/保存团队模板。
+3. **开始讨论**：输入首条提示（如“请审阅并给出初步反馈”），各角色会**逐条**回复并实时展示。
+4. **辩论与追问**：首轮结束后自动进入辩论轮；也可在输入框继续提问。
+5. **导出**：导出对话为 Markdown/PDF；可生成可执行摘要（Action Plan）。
+6. **文档改进**（可选）：点击「运行文档改进」，系统会从讨论+辩论中抽取建议，由文档改进 Agent 多轮调用工具改文档，并给出改进报告与可下载的文档。
 
-### Basic Workflow
+---
 
-1. **Upload Documents**: Drag and drop or select files (TXT, MD, DOCX, PDF)
-2. **Configure Team**: Set up AI agents with different roles and models
-3. **Start Discussion**: Let agents analyze and discuss the document
-4. **Interactive Chat**: Ask follow-up questions and guide the conversation
-5. **Export Results**: Download conversations and action plans
-
-### Team Setup
-
-The application supports multiple AI agents with different perspectives:
-- **Product Manager**: Strategy and market analysis
-- **Tech Lead**: Technical architecture and implementation
-- **UX Designer**: User experience and design considerations
-- **Security Expert**: Security and compliance review
-
-### Model Options
-
-Choose from Amazon Nova models based on your needs:
-- **Nova Micro**: Fast, basic analysis
-- **Nova Lite**: Balanced performance and cost
-- **Nova Pro**: Advanced reasoning capabilities  
-- **Nova Premier**: Highest quality analysis
-
-## Development
-
-### Project Structure
+## 项目结构
 
 ```
 ai-doc-read-studio/
-├── backend/                 # FastAPI backend
-│   ├── main.py             # Main application
-│   ├── agents.py           # AI agents integration
-│   └── document_parser.py  # Document processing
-├── frontend/               # Web interface
-│   ├── index.html          # Main UI
-│   ├── app.js              # Frontend logic
-│   └── config.js           # Configuration
-├── tests/                  # Test suite
-├── pyproject.toml          # UV dependencies
-├── config.json             # Application config
-└── sample_doc.md          # Sample document
+├── backend/
+│   ├── main.py              # FastAPI 入口、会话、上传、WebSocket、导出
+│   ├── agents.py            # 多角色讨论与辩论轮（create_agent, run_discussion_round）
+│   ├── document_parser.py   # 文档解析（PDF/DOCX/TXT/MD）
+│   ├── agent_engine/        # 文档改进 Agent
+│   │   ├── agent_loop.py    # 主循环：迭代 → ReAct → 验证 → 反思
+│   │   ├── llm_agent.py     # ReAct + Function Calling 工具定义与执行
+│   │   ├── reflection.py    # 改进效果评估与是否继续
+│   │   └── memory.py        # 长期记忆（策略与教训）
+│   └── tools/
+│       ├── document_tools.py   # 文档动作（术语表、摘要、案例、图表说明等）
+│       └── validation_tools.py # 文档质量指标（术语、结构、可读性、证据支撑等）
+├── frontend/
+│   ├── index.html
+│   ├── app.js
+│   └── config.js
+├── tests/
+├── config.json              # 应用与模型配置
+├── start_app.py             # 统一启动脚本
+└── pyproject.toml
 ```
 
-### Running Tests
+---
+
+## 配置说明
+
+- **config.json**：后端/前端端口、日志路径、可用模型列表与默认模型等。
+- **.env**：`OPENAI_API_KEY`、`OPENAI_BASE_URL`，不要提交到 Git。
+
+---
+
+## 开发与测试
 
 ```bash
-# Run all tests
+# 仅启动后端
+uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+# 仅启动前端（静态）
+uv run python -m http.server 3000 --directory frontend
+
+# 测试
 uv run pytest
 
-# Run with coverage
-uv run pytest --cov=backend --cov-report=html
-
-# Run specific test files
-uv run pytest tests/test_api.py -v
-```
-
-### Code Quality
-
-```bash
-# Format code
-uv run black .
-
-# Lint code  
+# 代码风格
 uv run ruff check .
-
-# Fix linting issues
-uv run ruff check . --fix
+uv run black .
 ```
 
-### Development Dependencies
+---
 
-Install development tools:
-```bash
-uv sync --dev
-```
+## 常见问题
 
-## Configuration
+- **端口占用**：默认后端 8000、前端 3000，可在 `config.json` 中修改。
+- **首次输入无回复**：确保 `.env` 中 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL` 正确；回复会先通过 WebSocket 逐条展示，HTTP 返回后也会用完整会话渲染一次。
+- **文档改进报错**：需先完成至少一轮讨论，以便从对话中抽取改进建议。
 
-### Application Settings
+---
 
-Edit `config.json` to customize:
-```json
-{
-  "backend": {
-    "host": "0.0.0.0",
-    "port": 8000,
-    "log_level": "info"
-  },
-  "frontend": {
-    "host": "localhost",
-    "port": 3000
-  },
-  "api": {
-    "base_url": "http://localhost:8000"
-  }
-}
-```
+## 许可证
 
-### AWS Configuration
-
-For production use with real AI models:
-
-1. **Configure AWS credentials:**
-   ```bash
-   aws configure
-   # OR set environment variables
-   export AWS_ACCESS_KEY_ID=your_key
-   export AWS_SECRET_ACCESS_KEY=your_secret  
-   export AWS_DEFAULT_REGION=us-east-1
-   ```
-
-2. **Ensure Bedrock access:** Your AWS account needs access to Amazon Bedrock and Nova models
-
-## API Endpoints
-
-- `POST /upload` - Upload documents
-- `POST /sessions` - Create discussion session  
-- `POST /sessions/{id}/prompt` - Add conversation prompt
-- `GET /sessions/{id}` - Get session details
-- `POST /sessions/{id}/export` - Export conversation
-- `POST /export/content` - Export arbitrary content
-- `WebSocket /ws` - Real-time updates
-
-## Troubleshooting
-
-1. **Installation issues**: Ensure UV is installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-2. **Port conflicts**: Check if ports 8000/3000 are available
-3. **AWS credentials**: Demo mode works without AWS; production needs Bedrock access
-4. **Module errors**: Always use `uv run` for Python commands
-5. **Cache issues**: Clear browser cache or use Ctrl+F5
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make changes with tests
-4. Run quality checks: `uv run pytest && uv run ruff check . && uv run black .`
-5. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details.
-
-## Support
-
-- GitHub Issues: For bugs and feature requests
-- Documentation: Check the `/docs` endpoint when running
-- Sample Document: Use `sample_doc.md` for testing
+MIT，详见 [LICENSE](LICENSE)。

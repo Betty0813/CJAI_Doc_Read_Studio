@@ -22,7 +22,7 @@ classifiers = [
 
 dependencies = [
     "aiofiles>=24.1.0",
-    "boto3>=1.39.11",
+    "openai>=1.40.0",
     "fastapi>=0.116.1",
     "httpx>=0.28.1",
     "markdown>=3.8.2",
@@ -33,7 +33,6 @@ dependencies = [
     "python-jose>=3.5.0",
     "python-multipart>=0.0.20",
     "requests>=2.32.4",
-    "strands-agents>=1.0.1",
     "uvicorn>=0.35.0",
     "slowapi>=0.1.9",
     "tenacity>=8.2.3",

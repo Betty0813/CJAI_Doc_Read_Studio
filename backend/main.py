@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, WebSocket, WebSocketDisconnect, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.exception_handlers import (
@@ -8,8 +8,9 @@ from fastapi.exception_handlers import (
 from fastapi.exceptions import RequestValidationError
 import traceback
 from pydantic import BaseModel, validator, Field
-from typing import List, Dict, AsyncGenerator
+from typing import List, Dict, AsyncGenerator, Optional
 import os
+import re
 import uuid
 import json
 import logging
@@ -189,7 +190,7 @@ class TeamMember(BaseModel):
     id: str = Field(..., min_length=1, max_length=100)
     name: str = Field(..., min_length=1, max_length=50)
     role: str = Field(..., min_length=1, max_length=200)
-    model: str = Field(default="nova-pro", pattern="^(nova-micro|nova-lite|nova-pro|nova-premier)$")
+    model: str = Field(default="gpt-4o-mini", pattern="^(gpt-4o-mini|gpt-4o|gpt-4-turbo)$")
 
 class CreateSessionRequest(BaseModel):
     document_ids: List[str] = Field(..., min_items=1, max_items=10)  # All documents for the session
@@ -218,7 +219,10 @@ class RevertRequest(BaseModel):
     pass  # No additional data needed
 
 class ActionableSummaryRequest(BaseModel):
-    model: str = Field(default="nova-pro", pattern="^(nova-micro|nova-lite|nova-pro|nova-premier)$")  # Default to Nova Pro
+    model: str = Field(default="gpt-4o", pattern="^(gpt-4o-mini|gpt-4o|gpt-4-turbo)$")  # Default to GPT-4o
+
+class RunAgentLoopRequest(BaseModel):
+    max_iterations: int = Field(default=3, ge=1, le=10)
 
 class Session:
     def __init__(self, session_id: str, document_ids: List[str], team_members: List[TeamMember]):
@@ -227,9 +231,13 @@ class Session:
         self.team_members = team_members
         self.conversation = []
         self.created_at = datetime.now().isoformat()
+        self.agent_loop_report = None  # 文档改进 Agent 循环的最终报告
 
 sessions = {}
 documents = {}
+
+# 当前正在运行 Agent 循环的 session_id（同一时间只允许一个）
+current_agent_loop_session_id = None
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -386,35 +394,41 @@ async def add_prompt(session_id: str, data: AddPromptRequest, request: Request):
 
         session = sessions[session_id]
 
-        # Get all document objects for the session
-        session_documents = [documents[doc_id] for doc_id in session.document_ids]
-
-        # Use real Strands agents with correct Bedrock model IDs
-        from .agents import run_discussion_round
-        logger.info("Loaded real Strands agents")
-        logger.info(f"Running discussion round with {len(session.team_members)} team members")
-        responses = await run_discussion_round(
-            session,
-            session_documents,
-            data.prompt
-        )
-        logger.info(f"Discussion round completed with {len(responses)} responses")
-
+        # Append user message first so conversation state is correct during the round
         session.conversation.append({
             "type": "user",
             "content": data.prompt,
             "timestamp": datetime.now().isoformat()
         })
 
-        for response in responses:
-            session.conversation.append(response)
+        # Get all document objects for the session
+        session_documents = [documents[doc_id] for doc_id in session.document_ids]
 
-        # Broadcast new responses via WebSocket
-        for response in responses:
+        from .agents import run_discussion_round
+        logger.info("Loaded real Strands agents")
+        logger.info(f"Running discussion round with {len(session.team_members)} team members")
+
+        async def on_agent_start(agent_name: str):
+            await manager.broadcast_to_session({
+                "type": "agent_thinking",
+                "data": {"agent_name": agent_name}
+            }, session_id)
+
+        async def on_agent_response(response: dict):
+            session.conversation.append(response)
             await manager.broadcast_to_session({
                 "type": "agent_response",
                 "data": response
             }, session_id)
+
+        responses = await run_discussion_round(
+            session,
+            session_documents,
+            data.prompt,
+            on_agent_start=on_agent_start,
+            on_agent_response=on_agent_response,
+        )
+        logger.info(f"Discussion round completed with {len(responses)} responses")
 
         return {"conversation": session.conversation}
     except HTTPException:
@@ -645,6 +659,126 @@ async def generate_actionable_summary(session_id: str, request: ActionableSummar
         logger.error(f"Error generating actionable summary: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+def _build_feedback_from_conversation(conversation: list) -> dict:
+    """从会话中提取专家建议，构建 Agent 循环所需的 feedback_analysis。"""
+    recommendations = []
+    for msg in conversation:
+        if msg.get("type") != "agent":
+            continue
+        content = msg.get("content") or ""
+        for line in content.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # 匹配 "1. xxx" / "* xxx" / "- xxx"
+            m = re.match(r"^\s*(?:\d+[.)]\s*|\*+\s*|-+\s*)\s*(.+)", line)
+            if m:
+                rec = m.group(1).strip()
+                if len(rec) > 10 and rec not in recommendations:
+                    recommendations.append(rec)
+    if not recommendations:
+        # 若无结构化建议，则把最后几条 agent 回复的首句当作建议
+        for msg in reversed(conversation):
+            if msg.get("type") == "agent" and msg.get("content"):
+                first_line = (msg["content"].split("\n")[0] or "").strip()
+                if len(first_line) > 15 and first_line not in recommendations:
+                    recommendations.append(first_line)
+                if len(recommendations) >= 5:
+                    break
+    return {
+        "synthesized_recommendations": recommendations[:25],
+        "source": "conversation"
+    }
+
+
+@app.post("/sessions/{session_id}/run-agent-loop")
+async def run_agent_loop_endpoint(session_id: str, request: Optional[RunAgentLoopRequest] = Body(None)):
+    """运行文档改进 Agent 循环（Plan → Action → Observation → Reflection）。"""
+    global current_agent_loop_session_id
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = sessions[session_id]
+    req = request or RunAgentLoopRequest()
+
+    # 需要先有一轮讨论才有建议
+    agent_messages = [m for m in session.conversation if m.get("type") == "agent"]
+    if not agent_messages:
+        raise HTTPException(
+            status_code=400,
+            detail="请先完成至少一轮专家讨论，以便根据反馈运行文档改进。"
+        )
+
+    feedback_analysis = _build_feedback_from_conversation(session.conversation)
+    if not feedback_analysis.get("synthesized_recommendations"):
+        raise HTTPException(
+            status_code=400,
+            detail="无法从讨论中提取改进建议，请先进行更多讨论或生成可执行摘要。"
+        )
+
+    # 合并会话中所有文档的文本内容
+    from .document_parser import parse_document
+    doc_parts = []
+    for doc_id in session.document_ids:
+        if doc_id not in documents:
+            continue
+        path = documents[doc_id].get("path")
+        if path and os.path.isfile(path):
+            try:
+                doc_parts.append(parse_document(path))
+            except Exception as e:
+                logger.warning("Failed to parse document for agent loop", doc_id=doc_id, error=str(e))
+    if not doc_parts:
+        raise HTTPException(status_code=400, detail="无法读取会话中的文档内容。")
+    document_content = "\n\n---\n\n".join(doc_parts)
+
+    try:
+        from .agent_engine.agent_loop import agent_loop_manager
+        agent_loop_manager.max_iterations = req.max_iterations
+        current_agent_loop_session_id = session_id
+        report = await agent_loop_manager.run_agent_loop(document_content, feedback_analysis, session_id=session_id)
+        session.agent_loop_report = report
+        return report
+    except Exception as e:
+        logger.error("Agent loop failed", session_id=session_id, error=str(e))
+        raise HTTPException(status_code=500, detail=f"Agent 循环执行失败: {str(e)}")
+    finally:
+        current_agent_loop_session_id = None
+
+
+@app.get("/sessions/{session_id}/agent-status")
+async def get_agent_status(session_id: str):
+    """获取当前会话的文档改进 Agent 状态或最近一次报告。"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = sessions[session_id]
+    if current_agent_loop_session_id == session_id:
+        from .agent_engine.agent_loop import agent_loop_manager
+        status = agent_loop_manager.get_current_status()
+        return {"state": "running", "status": status}
+    if session.agent_loop_report:
+        return {
+            "state": "completed",
+            "report": session.agent_loop_report
+        }
+    return {"state": "idle"}
+
+
+@app.get("/sessions/{session_id}/improved-document")
+async def get_improved_document(session_id: str):
+    """获取改进后的完整文档内容。"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = sessions[session_id]
+    if not session.agent_loop_report:
+        raise HTTPException(
+            status_code=404,
+            detail="尚未运行过文档改进，请先调用 run-agent-loop。"
+        )
+    doc = session.agent_loop_report.get("final_document") or session.agent_loop_report.get("final_document_preview", "")
+    return {"content": doc, "session_id": session_id}
+
+
 @app.get("/sessions/{session_id}")
 async def get_session(session_id: str):
     if session_id not in sessions:
@@ -664,7 +798,8 @@ async def get_session(session_id: str):
         "document_filenames": document_filenames,
         "team_members": [member.dict() for member in session.team_members],
         "conversation": session.conversation,
-        "created_at": session.created_at
+        "created_at": session.created_at,
+        "has_agent_loop_report": session.agent_loop_report is not None,
     }
 
 class LogRequest(BaseModel):
@@ -704,6 +839,23 @@ async def get_total_tokens():
     except Exception as e:
         logger.error("Error retrieving total tokens", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/agent-memory")
+async def get_agent_memory_stats():
+    """查看 Agent 长期记忆统计与最近条目。"""
+    from .agent_engine.memory import agent_memory
+    stats = agent_memory.get_stats()
+    recent = agent_memory.entries[-10:] if agent_memory.entries else []
+    return {"stats": stats, "recent_entries": recent}
+
+
+@app.get("/agent-memory/search")
+async def search_agent_memory(q: str, top_k: int = 5):
+    """搜索 Agent 长期记忆。"""
+    from .agent_engine.memory import agent_memory
+    results = agent_memory.retrieve(q, top_k=top_k)
+    return {"query": q, "results": results}
 
 @app.get("/agent-templates")
 async def get_agent_templates():

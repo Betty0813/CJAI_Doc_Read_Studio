@@ -4,541 +4,718 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Doc Read Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --primary-light: #818cf8;
+            --accent: #f59e0b;
+            --accent-dark: #d97706;
+            --success: #10b981;
+            --success-dark: #059669;
+            --danger: #ef4444;
+            --danger-dark: #dc2626;
+            --info: #06b6d4;
+            --info-dark: #0891b2;
+            --purple: #8b5cf6;
+            --purple-dark: #7c3aed;
+            --export-orange: #f97316;
+
+            --bg-primary: #f8fafc;
+            --bg-card: #ffffff;
+            --bg-sidebar: #ffffff;
+            --bg-input: #f1f5f9;
+            --bg-bubble: #f1f5f9;
+            --bg-bubble-user: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --border: #e2e8f0;
+            --border-light: #f1f5f9;
+
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 16px;
+            --radius-xl: 20px;
+            --radius-full: 9999px;
+
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.04);
+            --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.08), 0 8px 10px -6px rgba(0,0,0,0.04);
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background: #f5f5f5;
-            color: #333;
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
         }
-        
+
         .container {
-            max-width: 1400px;
+            max-width: 1440px;
             margin: 0 auto;
-            padding: 20px;
-        }
-        
-        .header {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .main-content {
-            display: flex;
-            gap: 20px;
-        }
-        
-        .sidebar {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            width: 300px;
-            flex-shrink: 0;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-        
-        .discussion-area {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            flex: 1;
-            height: 80vh;
+            padding: 16px 20px;
+            height: 100vh;
             display: flex;
             flex-direction: column;
         }
-        
+
+        /* ─── Header ─── */
+        .header {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%);
+            padding: 16px 28px;
+            border-radius: var(--radius-lg);
+            margin-bottom: 16px;
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .header h1 {
+            font-size: 22px;
+            font-weight: 700;
+            color: white;
+            letter-spacing: -0.3px;
+        }
+
+        .header p {
+            font-size: 13px;
+            color: rgba(255,255,255,0.8);
+            margin-top: 2px;
+        }
+
+        .header-badge {
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(8px);
+            color: white;
+            padding: 6px 14px;
+            border-radius: var(--radius-full);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+
+        /* ─── Main Content ─── */
+        .main-content {
+            display: flex;
+            gap: 16px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* ─── Sidebar ─── */
+        .sidebar {
+            background: var(--bg-sidebar);
+            padding: 20px;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            width: 310px;
+            flex-shrink: 0;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 5px;
+        }
+        .sidebar::-webkit-scrollbar-thumb {
+            background: var(--text-muted);
+            border-radius: var(--radius-full);
+        }
+
+        /* ─── Discussion Area ─── */
+        .discussion-area {
+            background: var(--bg-card);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--border);
+            min-height: 0;
+        }
+
         .conversation {
             flex: 1;
-            padding: 20px;
+            padding: 24px;
             overflow-y: auto;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border);
         }
-        
+
+        .conversation::-webkit-scrollbar {
+            width: 6px;
+        }
+        .conversation::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: var(--radius-full);
+        }
+
         .input-area {
-            padding: 20px;
-            background: #f8f9fa;
+            padding: 16px 20px;
+            background: var(--bg-input);
+            border-radius: 0 0 var(--radius-lg) var(--radius-lg);
         }
-        
+
         .prompt-input {
             width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            min-height: 60px;
+            padding: 12px 16px;
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius-md);
+            min-height: 56px;
             resize: vertical;
+            font-family: inherit;
+            font-size: 14px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
-        
+
+        .prompt-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+        }
+
+        /* ─── Buttons ─── */
         .btn {
-            background: #FF9900;
+            background: var(--primary);
             color: white;
             border: none;
             padding: 10px 20px;
-            border-radius: 4px;
+            border-radius: var(--radius-sm);
             cursor: pointer;
             margin-top: 10px;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
         }
-        
+
         .btn:hover {
-            background: #e88b00;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
         }
-        
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
         .btn:disabled {
-            background: #ccc;
+            background: #cbd5e1;
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
-        
+
+        /* ─── Team Member Card ─── */
         .team-member {
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 6px;
-            margin-bottom: 6px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            margin-bottom: 8px;
             overflow: hidden;
+            transition: box-shadow 0.2s, border-color 0.2s;
         }
-        
+
+        .team-member:hover {
+            border-color: var(--primary-light);
+            box-shadow: 0 0 0 1px rgba(99,102,241,0.1);
+        }
+
         .team-member input, .team-member select {
             width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            margin: 5px 0;
+            padding: 8px 10px;
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius-sm);
+            margin: 4px 0;
+            font-family: inherit;
+            font-size: 13px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            transition: border-color 0.2s;
         }
-        
+
+        .team-member input:focus, .team-member select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        /* ─── Messages ─── */
         .message {
-            margin-bottom: 16px;
+            margin-bottom: 20px;
             display: flex;
             gap: 12px;
+            animation: messageIn 0.3s ease-out;
         }
-        
+
+        @keyframes messageIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         .message-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: #007bff;
+            width: 38px;
+            height: 38px;
+            border-radius: var(--radius-full);
+            background: linear-gradient(135deg, var(--primary) 0%, var(--purple) 100%);
             color: white;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: bold;
+            font-weight: 700;
+            font-size: 14px;
             flex-shrink: 0;
+            box-shadow: var(--shadow-sm);
         }
-        
+
         .message-bubble {
-            background: #f8f9fa;
-            padding: 12px 16px;
-            border-radius: 18px;
+            background: var(--bg-bubble);
+            padding: 12px 18px;
+            border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px;
             max-width: 70%;
+            line-height: 1.6;
+            font-size: 14px;
+            box-shadow: var(--shadow-sm);
         }
-        
+
         .message.user {
             justify-content: flex-end;
         }
 
         .message.user .message-bubble {
-            background: #007bff;
+            background: var(--bg-bubble-user);
             color: white;
+            border-radius: var(--radius-lg) var(--radius-lg) 4px var(--radius-lg);
         }
-        
+
         .hidden {
             display: none;
         }
-        
+
         .loading {
             text-align: center;
-            padding: 40px;
-            color: #666;
+            padding: 60px 20px;
+            color: var(--text-muted);
+            font-size: 15px;
         }
-        
+
+        /* ─── Upload Area ─── */
         .upload-area {
-            border: 2px dashed #ddd;
-            border-radius: 8px;
-            padding: 12px;
+            border: 2px dashed var(--border);
+            border-radius: var(--radius-md);
+            padding: 16px;
             text-align: center;
-            margin-bottom: 15px;
+            margin-bottom: 16px;
+            transition: all 0.2s;
+            background: var(--bg-input);
         }
-        
+
         .upload-area:hover {
-            border-color: #FF9900;
+            border-color: var(--primary-light);
+            background: rgba(99,102,241,0.04);
         }
-        
+
         .file-input {
             display: none;
         }
-        
+
         .document-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px;
-            background: #f8f9fa;
-            border-radius: 4px;
-            margin: 5px 0;
+            padding: 8px 12px;
+            background: var(--bg-input);
+            border-radius: var(--radius-sm);
+            margin: 6px 0;
+            font-size: 13px;
+            border: 1px solid var(--border-light);
         }
-        
+
         .remove-doc {
-            background: #dc3545;
+            background: var(--danger);
             color: white;
             border: none;
-            border-radius: 3px;
-            padding: 2px 6px;
+            border-radius: 4px;
+            padding: 3px 8px;
             cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            transition: background 0.2s;
         }
-        
+
+        .remove-doc:hover {
+            background: var(--danger-dark);
+        }
+
+        /* ─── Action Plan ─── */
         .action-plan-section {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-top: 20px;
+            background: var(--bg-card);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            margin-top: 16px;
+            border: 1px solid var(--border);
+            overflow: hidden;
         }
-        
+
         .action-plan-header {
-            background: #6f42c1;
+            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
             color: white;
-            padding: 15px 20px;
+            padding: 14px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-        
+
         .action-plan-content {
             padding: 20px;
             max-height: 400px;
             overflow-y: auto;
         }
-        
+
+        /* ─── Section Titles ─── */
         .section-title {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 15px;
-            color: #232F3E;
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 14px;
+            color: var(--text-primary);
+            letter-spacing: -0.2px;
         }
-        
+
         .section-subtitle {
-            font-size: 14px;
-            font-weight: 500;
-            color: #666;
-            margin-bottom: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
         }
-        
+
         .uploaded-documents {
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #eee;
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
         }
-        
+
+        /* ─── Member Card Accordion ─── */
         .member-header {
-            padding: 8px 12px;
+            padding: 10px 12px;
             cursor: pointer;
             display: flex;
             justify-content: space-between;
             align-items: center;
             user-select: none;
-            transition: background-color 0.2s ease;
+            transition: background-color 0.15s;
         }
-        
+
         .member-header:hover {
-            background: rgba(0,0,0,0.02);
+            background: rgba(99,102,241,0.04);
         }
-        
+
         .member-summary {
             display: flex;
             align-items: center;
             gap: 10px;
             flex: 1;
         }
-        
+
         .member-avatar {
             font-size: 16px;
-            width: 24px;
+            width: 26px;
             text-align: center;
         }
-        
+
         .member-info {
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 1px;
         }
-        
+
         .member-display-name {
             font-weight: 600;
-            font-size: 14px;
-            color: #333;
+            font-size: 13px;
+            color: var(--text-primary);
         }
-        
+
         .member-display-role {
-            font-size: 12px;
-            color: #666;
-            line-height: 1.2;
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.3;
         }
-        
+
         .expand-icon {
-            font-size: 12px;
-            color: #666;
+            font-size: 11px;
+            color: var(--text-muted);
             transition: transform 0.2s ease;
         }
-        
+
         .member-details {
             padding: 0 12px 12px 12px;
             transition: all 0.3s ease;
             opacity: 1;
             max-height: 300px;
         }
-        
+
         .member-details.collapsed {
             opacity: 0;
             max-height: 0;
             padding: 0 12px;
             overflow: hidden;
         }
-        
+
         .member-field {
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
-        
+
         .field-label {
             display: block;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            color: #495057;
+            color: var(--text-secondary);
             margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
         }
-        
-        /* Typing Indicator Styles */
+
+        /* ─── Typing Indicator ─── */
         .typing-indicator {
             margin-bottom: 16px;
             display: flex;
             align-items: flex-start;
             gap: 12px;
-            opacity: 0.8;
+            opacity: 0.85;
             width: 100%;
         }
-        
+
         .typing-indicator .message-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
+            width: 38px;
+            height: 38px;
+            border-radius: var(--radius-full);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 600;
-            font-size: 14px;
+            font-weight: 700;
+            font-size: 13px;
             flex-shrink: 0;
             margin-top: 4px;
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            background: linear-gradient(135deg, #a78bfa 0%, var(--primary) 100%);
             color: white;
             animation: pulse 2s infinite;
         }
-        
+
         @keyframes pulse {
             0%, 100% { opacity: 0.8; }
             50% { opacity: 1; }
         }
-        
+
         .typing-bubble {
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
-            color: #333;
-            border-radius: 18px 18px 18px 4px;
-            padding: 16px 20px;
+            background: var(--bg-bubble);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px;
+            padding: 14px 18px;
             max-width: min(200px, 40vw);
             position: relative;
             flex-shrink: 1;
         }
-        
+
         .typing-text {
-            font-size: 14px;
-            color: #666;
+            font-size: 13px;
+            color: var(--text-muted);
             margin-bottom: 8px;
             font-style: italic;
         }
-        
+
         .typing-dots {
             display: flex;
-            gap: 4px;
+            gap: 5px;
             align-items: center;
         }
-        
+
         .typing-dot {
-            width: 8px;
-            height: 8px;
+            width: 7px;
+            height: 7px;
             border-radius: 50%;
-            background: #6c757d;
+            background: var(--primary-light);
             animation: typing 1.5s infinite;
         }
-        
-        .typing-dot:nth-child(2) {
-            animation-delay: 0.2s;
-        }
-        
-        .typing-dot:nth-child(3) {
-            animation-delay: 0.4s;
-        }
-        
+
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
         @keyframes typing {
-            0%, 60%, 100% {
-                transform: translateY(0);
-                opacity: 0.4;
-            }
-            30% {
-                transform: translateY(-10px);
-                opacity: 1;
-            }
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
+            30% { transform: translateY(-8px); opacity: 1; }
         }
-        
+
         .agents-thinking {
-            background: linear-gradient(45deg, #f8f9fa, #e9ecef);
-            border: 1px solid #dee2e6;
-            border-radius: 12px;
-            padding: 16px;
+            background: linear-gradient(135deg, rgba(99,102,241,0.06) 0%, rgba(139,92,246,0.08) 100%);
+            border: 1px solid rgba(99,102,241,0.15);
+            border-radius: var(--radius-md);
+            padding: 18px;
             margin: 16px 0;
             text-align: center;
         }
-        
+
         .agents-thinking-text {
             font-size: 14px;
-            color: #495057;
+            color: var(--text-secondary);
             margin-bottom: 12px;
-            font-weight: 500;
+            font-weight: 600;
         }
-        
+
         .agents-progress {
             display: flex;
             justify-content: center;
             gap: 8px;
             margin-bottom: 8px;
         }
-        
+
         .agent-progress-dot {
             width: 32px;
             height: 32px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            border-radius: var(--radius-full);
+            background: linear-gradient(135deg, var(--primary) 0%, var(--purple) 100%);
             color: white;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 12px;
-            font-weight: 600;
-            position: relative;
+            font-weight: 700;
             animation: agentThinking 2s infinite;
         }
-        
-        .agent-progress-dot:nth-child(2) {
-            animation-delay: 0.3s;
-        }
-        
-        .agent-progress-dot:nth-child(3) {
-            animation-delay: 0.6s;
-        }
-        
-        .agent-progress-dot:nth-child(4) {
-            animation-delay: 0.9s;
-        }
-        
+
+        .agent-progress-dot:nth-child(2) { animation-delay: 0.3s; }
+        .agent-progress-dot:nth-child(3) { animation-delay: 0.6s; }
+        .agent-progress-dot:nth-child(4) { animation-delay: 0.9s; }
+
         @keyframes agentThinking {
-            0%, 70%, 100% {
-                transform: scale(1);
-                opacity: 0.7;
-            }
-            35% {
-                transform: scale(1.2);
-                opacity: 1;
-            }
+            0%, 70%, 100% { transform: scale(1); opacity: 0.6; }
+            35% { transform: scale(1.15); opacity: 1; }
         }
-        
-        /* Beautiful Button Bar Animations */
+
+        /* ─── Control Buttons ─── */
         .button-bar {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             margin-top: 10px;
             align-items: center;
         }
-        
+
         .control-btn {
-            display: flex;
+            display: inline-flex;
             align-items: center;
             gap: 6px;
-            background-color: #6c757d;
+            background-color: #64748b;
             color: white;
             border: none;
-            padding: 10px 16px;
-            border-radius: 6px;
+            padding: 9px 14px;
+            border-radius: var(--radius-sm);
             cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
             transition: all 0.2s;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            box-shadow: var(--shadow-sm);
         }
-        
+
         .control-btn:hover {
-            background-color: #5a6268;
+            filter: brightness(1.1);
             transform: translateY(-1px);
-            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            box-shadow: var(--shadow-md);
         }
-        
+
+        .control-btn:active { transform: translateY(0); }
+
         .control-btn:disabled {
-            background-color: #ccc;
+            background-color: #cbd5e1;
             cursor: not-allowed;
             transform: none;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            box-shadow: none;
+            filter: none;
         }
-        
-        .control-btn.regenerate {
-            background-color: #17a2b8;
+
+        .control-btn.regenerate { background-color: var(--info); }
+        .control-btn.regenerate:hover:not(:disabled) { background-color: var(--info-dark); }
+
+        .control-btn.revert { background-color: var(--danger); }
+        .control-btn.revert:hover:not(:disabled) { background-color: var(--danger-dark); }
+
+        .send-btn { background-color: var(--success); margin-left: auto; }
+        .send-btn:hover:not(:disabled) { background-color: var(--success-dark); }
+
+        .control-btn.summary { background-color: var(--purple); }
+        .control-btn.summary:hover:not(:disabled) { background-color: var(--purple-dark); }
+
+        .control-btn.export { background-color: var(--export-orange); }
+        .control-btn.export:hover:not(:disabled) { background-color: var(--accent-dark); }
+
+        /* ─── Debate Phase ─── */
+        .debate-phase-divider {
+            margin: 24px 0 14px 0;
+            padding: 10px 16px;
+            background: linear-gradient(90deg, rgba(99,102,241,0.08), rgba(139,92,246,0.1));
+            border-left: 3px solid var(--purple);
+            border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        
-        .control-btn.regenerate:hover:not(:disabled) {
-            background-color: #138496;
+        .debate-phase-divider::before {
+            content: "\2694";
+            font-size: 16px;
         }
-        
-        .control-btn.revert {
-            background-color: #dc3545;
+        .message.message-debate {
+            border-left: 3px solid var(--purple-dark);
+            margin-left: 4px;
+            border-radius: 0 var(--radius-md) var(--radius-md) 0;
         }
-        
-        .control-btn.revert:hover:not(:disabled) {
-            background-color: #c82333;
+        .message.message-debate .message-bubble {
+            background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+            border: 1px solid #ddd6fe;
         }
-        
-        .send-btn {
-            background-color: #28a745;
-            margin-left: auto;
+        .debate-badge {
+            display: inline-block;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: var(--radius-full);
+            background: var(--purple);
+            color: white;
+            margin-left: 8px;
+            font-weight: 600;
         }
-        
-        .send-btn:hover:not(:disabled) {
-            background-color: #218838;
+        .debate-structure {
+            margin-top: 8px;
+            font-size: 12px;
         }
-        
-        .control-btn.summary {
-            background-color: #6f42c1;
-        }
-        
-        .control-btn.summary:hover:not(:disabled) {
-            background-color: #5a359a;
-        }
-        
-        .control-btn.export {
-            background-color: #fd7e14;
-        }
-        
-        .control-btn.export:hover:not(:disabled) {
-            background-color: #e96b00;
-        }
+        .debate-structure .agreements { color: var(--success); }
+        .debate-structure .challenges { color: var(--danger); }
+        .debate-structure .insights { color: var(--primary); }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>AI Doc Read Studio</h1>
-            <p>Collaborative document review with AI agents</p>
+            <div>
+                <h1>AI Doc Read Studio</h1>
+                <p>Collaborative document review powered by AI agents</p>
+            </div>
+            <span class="header-badge">AI Agent</span>
         </div>
         
         <div class="main-content" id="mainContent">
@@ -546,10 +723,10 @@
                 <!-- Document Upload Section -->
                 <div class="section-title">1. Upload Documents</div>
                 <div class="upload-area" id="uploadArea">
-                    <p style="margin: 5px 0;">Drop documents here or click to browse</p>
+                    <p style="margin: 5px 0; color: var(--text-secondary); font-size: 13px;">Drop documents here or click to browse</p>
                     <input type="file" id="fileInput" class="file-input" accept=".txt,.md,.docx,.pdf" multiple>
                     <button id="uploadBtn" class="btn" style="margin: 8px 0;">Choose Files</button>
-                    <p style="margin: 5px 0;"><small>TXT, Markdown, Word, PDF (Max: 10 files)</small></p>
+                    <p style="margin: 5px 0;"><small style="color: var(--text-muted);">TXT, Markdown, Word, PDF (Max: 10 files)</small></p>
                 </div>
                 <div id="uploadStatus"></div>
                 
@@ -564,20 +741,20 @@
                 
                 <!-- Team Configuration Controls -->
                 <div style="margin-bottom: 15px;">
-                    <div style="font-size: 12px; color: #666; margin-bottom: 8px;">Load/Save Team Configurations:</div>
-                    <div style="display: flex; gap: 6px; align-items: center; padding: 8px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600;">Load / Save Configurations</div>
+                    <div style="display: flex; gap: 6px; align-items: center; padding: 8px; background: var(--bg-input); border-radius: var(--radius-sm); border: 1px solid var(--border);">
                         <select id="teamTemplateSelect" 
                                 title="Load a preset team configuration"
-                                style="background: #6c757d; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 11px; flex: 1;">
-                            <option value="">📋 Team Templates</option>
-                            <option value="empty">📄 New Team</option>
-                            <option value="quick-review">⚡ Quick Review</option>
-                            <option value="full-stack">🏗️ Full Stack Review</option>
-                            <option value="security-audit">🔒 Security Audit</option>
+                                style="background: #64748b; color: white; border: none; padding: 5px 8px; border-radius: var(--radius-sm); font-size: 11px; flex: 1; font-family: inherit;">
+                            <option value="">Team Templates</option>
+                            <option value="empty">New Team</option>
+                            <option value="quick-review">Quick Review</option>
+                            <option value="full-stack">Full Stack Review</option>
+                            <option value="security-audit">Security Audit</option>
                         </select>
                         <button id="loadTeamBtn" class="btn" 
                                 title="Load team configuration from JSON file"
-                                style="background: #007bff; font-size: 11px; padding: 4px 8px; min-width: auto;">
+                                style="font-size: 11px; padding: 5px 10px; min-width: auto; margin-top: 0;">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                                 <polyline points="17,8 12,3 7,8"/>
@@ -587,7 +764,7 @@
                         </button>
                         <button id="saveTeamBtn" class="btn" 
                                 title="Save team configuration as JSON file"
-                                style="background: #28a745; font-size: 11px; padding: 4px 8px; min-width: auto;">
+                                style="background: var(--success); font-size: 11px; padding: 5px 10px; min-width: auto; margin-top: 0;">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                                 <polyline points="7,10 12,15 17,10"/>
@@ -622,8 +799,8 @@
                                    placeholder="Enter team configuration name"
                                    title="Name for this team configuration (used for saved files)">
                         </div>
-                        <div style="background: #f8f9fa; padding: 8px; border-radius: 6px; font-size: 12px; color: #495057; margin-top: 8px;">
-                            💡 This name will be used when saving/loading team configurations
+                        <div style="background: var(--bg-input); padding: 8px 10px; border-radius: var(--radius-sm); font-size: 11px; color: var(--text-muted); margin-top: 8px;">
+                            This name will be used when saving/loading team configurations
                         </div>
                     </div>
                 </div>
@@ -632,10 +809,10 @@
                     <!-- Team members will be added here -->
                 </div>
                 <div style="display: flex; gap: 8px; margin-top: 10px;">
-                    <button class="btn add-member-btn" style="flex: 1; min-height: 36px; padding: 8px 16px;">
-                        + Add Team Member
+                    <button class="btn add-member-btn" style="flex: 1; min-height: 36px; padding: 8px 16px; margin-top: 0;">
+                        + Add Member
                     </button>
-                    <button class="btn add-customer-btn" id="addCustomerBtn" style="background: #28a745; flex: 1; min-height: 36px; padding: 8px 16px;">
+                    <button class="btn add-customer-btn" id="addCustomerBtn" style="background: var(--success); flex: 1; min-height: 36px; padding: 8px 16px; margin-top: 0;">
                         + Add Customer
                     </button>
                 </div>
@@ -691,11 +868,11 @@
                     </div>
                     
                     <!-- Summary and Export Section -->
-                    <div class="summary-separator hidden" id="summarySeparator" style="height: 1px; background: linear-gradient(to right, transparent, #e9ecef 20%, #e9ecef 80%, transparent); margin: 15px 10px 5px 10px;"></div>
+                    <div class="summary-separator hidden" id="summarySeparator" style="height: 1px; background: linear-gradient(to right, transparent, var(--border) 20%, var(--border) 80%, transparent); margin: 15px 10px 5px 10px;"></div>
                     <div class="summary-bar hidden" id="summaryBar" style="margin-top: 15px;">
                         <!-- Export Controls -->
                         <div class="export-controls" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
-                            <span style="font-size: 14px; color: #495057; margin-right: 8px;">📤 Export Conversation:</span>
+                            <span style="font-size: 13px; color: var(--text-secondary); margin-right: 8px; font-weight: 600;">Export:</span>
                             <button class="control-btn export hidden" id="exportMarkdownBtn" 
                                     title="Export conversation as Markdown">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -718,7 +895,7 @@
                         
                         <!-- Action Plan Controls -->  
                         <div class="action-plan-controls" style="display: flex; gap: 8px; align-items: center;">
-                            <span style="font-size: 14px; color: #495057; margin-right: 8px;">📋 Generate Action Plan:</span>
+                            <span style="font-size: 13px; color: var(--text-secondary); margin-right: 8px; font-weight: 600;">Action Plan:</span>
                             <button class="control-btn summary hidden" id="summaryBtn" 
                                     title="Generate Action Plan">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -732,16 +909,30 @@
                             </button>
                             <select class="summary-model-select hidden" id="summaryModelSelect" 
                                     title="AI model for summary generation"
-                                    style="padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; background-color: white; cursor: pointer;">
+                                    style="padding: 8px 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; background-color: var(--bg-card); cursor: pointer; font-family: inherit;">
                                 <!-- Options will be populated by JavaScript -->
                             </select>
+                        </div>
+                        
+                        <!-- Document Improvement Agent -->
+                        <div class="agent-loop-controls" style="display: flex; gap: 8px; align-items: center; margin-top: 12px;">
+                            <span style="font-size: 13px; color: var(--text-secondary); margin-right: 8px; font-weight: 600;">Doc Improve:</span>
+                            <button class="control-btn hidden" id="runAgentLoopBtn" style="background: var(--primary); color: white;"
+                                    title="根据讨论反馈自动改进文档（Plan → Action → Observation → Reflection）">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 12a9 9 0 1 1-9-9"/>
+                                    <polyline points="21 3 21 9 15 9"/>
+                                </svg>
+                                运行文档改进
+                            </button>
+                            <span class="agent-loop-status" id="agentLoopStatus" style="font-size: 12px; color: var(--text-muted);"></span>
                         </div>
                     </div>
                 </div>
                 
                 <div class="action-plan-section hidden" id="actionPlanSection">
                     <div class="action-plan-header">
-                        <h3>📋 Action Plan</h3>
+                        <h3 style="font-size: 15px; font-weight: 700;">Action Plan</h3>
                         <div style="display: flex; gap: 8px;">
                             <button class="control-btn export" id="downloadMarkdownBtn" 
                                     title="Download action plan as Markdown">
@@ -761,10 +952,25 @@
                                 </svg>
                                 PDF
                             </button>
-                            <button class="btn" id="closeActionPlanBtn" style="background: #6c757d;">Close</button>
+                            <button class="btn" id="closeActionPlanBtn" style="background: #64748b; margin-top: 0; padding: 8px 14px;">Close</button>
                         </div>
                     </div>
                     <div class="action-plan-content" id="actionPlanContent"></div>
+                </div>
+                
+                <!-- Document Improvement Report (Agent Loop) -->
+                <div class="action-plan-section hidden" id="agentLoopReportSection" style="border: 1px solid var(--primary-light);">
+                    <div class="action-plan-header" style="background: linear-gradient(135deg, var(--primary) 0%, var(--purple) 100%);">
+                        <h3 style="font-size: 15px; font-weight: 700;">Document Improvement Report</h3>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="control-btn export" id="downloadImprovedDocBtn" style="display: none;" title="Download improved document">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                Download
+                            </button>
+                            <button class="btn" id="closeAgentLoopReportBtn" style="background: #64748b; margin-top: 0; padding: 8px 14px;">Close</button>
+                        </div>
+                    </div>
+                    <div class="action-plan-content" id="agentLoopReportContent"></div>
                 </div>
             </div>
         </div>

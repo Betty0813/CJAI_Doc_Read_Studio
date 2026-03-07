@@ -19,7 +19,7 @@ func jsonStr(jv: ?JsonValue): String {
 
 func truncate(s: String, maxLen: Int64): String {
     if (s.size <= maxLen) { return s }
-    return s[..maxLen] + "\n\n...(truncated)"
+    return safeTruncate(s, maxLen) + "\n\n...(truncated)"
 }
 
 // Tool definition: generate OpenAI function calling format JSON
@@ -463,7 +463,7 @@ Output ONLY valid JSON:
         actionsSb.append(a)
     }
     let actionsStr = actionsSb.toString()
-    let reasoningTrunc = if (reactReasoning.size > 500) { reactReasoning[..500] } else { reactReasoning }
+    let reasoningTrunc = if (reactReasoning.size > 500) { safeTruncate(reactReasoning, 500) } else { reactReasoning }
 
     let userPrompt = "Iteration: ${iterationNumber} / ${maxIterations}\nMetrics before: ${beforeStr}\nMetrics after: ${afterStr}\nActions taken: ${actionsStr}\nAgent reasoning: ${reasoningTrunc}\n\nOutput JSON only."
 

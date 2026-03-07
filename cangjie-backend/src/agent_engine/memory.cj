@@ -20,7 +20,7 @@ func tokenize(text: String): ArrayList<String> {
         match (matcher.find()) {
             case Some(m) =>
                 let pos = m.matchPosition()
-                tokens.add(lowerText[pos.start..pos.end])
+                try { tokens.add(lowerText[pos.start..pos.end]) } catch (_: Exception) { () }
             case None => break
         }
     }
@@ -224,7 +224,7 @@ public class AgentMemory {
         sb.append("Past improvement strategies that worked:\n")
         for ((_, entry) in results) {
             let content = entry.get("content").flatMap { v => v.getString() } ?? ""
-            let truncated = if (content.size > 200) { content[..200] } else { content }
+            let truncated = if (content.size > 200) { safeTruncate(content, 200) } else { content }
             sb.append("- ${truncated}\n")
         }
         return sb.toString()

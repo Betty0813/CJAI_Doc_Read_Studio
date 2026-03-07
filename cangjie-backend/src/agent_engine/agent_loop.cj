@@ -108,7 +108,7 @@ public class AgentLoopManager {
             return generateFinalReport()
         }
 
-        let memoryContext = memory.getRelevantStrategies(documentContent[..min(3000, documentContent.size)])
+        let memoryContext = memory.getRelevantStrategies(safeTruncate(documentContent, 3000))
         let lessons = memory.getLessons(topK: 3)
         var fullMemoryContext = memoryContext
         if (lessons.size > 0) {
@@ -372,7 +372,7 @@ public class AgentLoopManager {
         }
 
         let doc = currentDocument ?? ""
-        let preview = if (doc.size > 500) { doc[..500] + "..." } else { doc }
+        let preview = if (doc.size > 500) { safeTruncate(doc, 500) + "..." } else { doc }
 
         return jsonObj([
             ("status", JsonValue.JsonString("completed")),

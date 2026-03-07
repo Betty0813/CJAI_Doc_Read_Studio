@@ -54,12 +54,33 @@ public func loadDotEnv(path!: String = ".env"): Unit {
 public func toLowerAscii(s: String): String {
     let bytes = s.toArray()
     let sb = StringBuilder()
-    for (i in 0..bytes.size) {
+    var i: Int64 = 0
+    let size = Int64(bytes.size)
+    while (i < size) {
         let ch = bytes[i]
         if (ch >= 65 && ch <= 90) {
+            // ASCII uppercase A-Z: convert to lowercase
             sb.append(String.fromUtf8([ch + 32]))
-        } else {
+            i += 1
+        } else if (ch <= 127) {
+            // Other single-byte ASCII: pass through
             sb.append(String.fromUtf8([ch]))
+            i += 1
+        } else if (ch >= 194 && ch <= 223 && i + 1 < size) {
+            // 2-byte UTF-8 sequence (e.g. Latin extended)
+            try { sb.append(String.fromUtf8([bytes[i], bytes[i + 1]])); i += 2 }
+            catch (_: Exception) { sb.append("?"); i += 1 }
+        } else if (ch >= 224 && ch <= 239 && i + 2 < size) {
+            // 3-byte UTF-8 sequence (e.g. CJK characters)
+            try { sb.append(String.fromUtf8([bytes[i], bytes[i + 1], bytes[i + 2]])); i += 3 }
+            catch (_: Exception) { sb.append("?"); i += 1 }
+        } else if (ch >= 240 && ch <= 247 && i + 3 < size) {
+            // 4-byte UTF-8 sequence (e.g. emoji)
+            try { sb.append(String.fromUtf8([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]])); i += 4 }
+            catch (_: Exception) { sb.append("?"); i += 1 }
+        } else {
+            sb.append("?")
+            i += 1
         }
     }
     return sb.toString()

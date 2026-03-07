@@ -332,8 +332,8 @@ RULES:
             case None => ()
         }
 
-        let othersLimited = if (othersText.size > 6000) { othersText[..6000] } else { othersText }
-        let docsLimited = if (documentsContent.size > 4000) { documentsContent[..4000] } else { documentsContent }
+        let othersLimited = if (othersText.size > 6000) { safeTruncate(othersText, 6000) } else { othersText }
+        let docsLimited = if (documentsContent.size > 4000) { safeTruncate(documentsContent, 4000) } else { documentsContent }
 
         let system = debateSystemTemplate
             .replace("{name}", member.name)

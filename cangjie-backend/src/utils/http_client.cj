@@ -129,6 +129,30 @@ public func safeDecodeBytes(all: Array<Byte>): String {
     return sb.toString()
 }
 
+// Truncate a string at a safe UTF-8 character boundary so that the result is always
+// valid UTF-8, even when the input contains multi-byte (e.g. CJK) characters.
+// Using plain s[..n] in Cangjie slices by byte offset and can cut inside a multi-byte
+// sequence, producing an invalid byte sequence that later throws IllegalArgumentException.
+public func safeTruncate(s: String, maxBytes: Int64): String {
+    if (s.size <= maxBytes) { return s }
+    let bytes = s.toArray()
+    let size = Int64(bytes.size)
+    var pos = if (maxBytes < size) { maxBytes } else { size }
+    // Walk backward over UTF-8 continuation bytes (0x80-0xBF)
+    while (pos > 0 && bytes[pos - 1] >= 128 && bytes[pos - 1] < 192) {
+        pos -= 1
+    }
+    // If we stopped at a multi-byte start byte (>= 0xC2), remove it too — its
+    // continuation bytes were cut off so the sequence would be incomplete.
+    if (pos > 0 && bytes[pos - 1] >= 192) {
+        pos -= 1
+    }
+    if (pos <= 0) { return "" }
+    let truncBytes = Array<Byte>(pos, repeat: 0)
+    for (i in 0..pos) { truncBytes[i] = bytes[i] }
+    return safeDecodeBytes(truncBytes)
+}
+
 // Produce a JSON string literal (with surrounding quotes) that is always safe to
 // embed in a JSON body, regardless of what the Cangjie JSON serializer supports.
 // Handles all control chars, backslash, quote, and multi-byte UTF-8.

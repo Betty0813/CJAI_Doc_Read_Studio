@@ -105,7 +105,7 @@ func handleCorsOptions(ctx: HttpContext): Unit {
 
 func readRequestBody(ctx: HttpContext): String {
     let bytes = readRequestBodyBytes(ctx)
-    return String.fromUtf8(bytes)
+    return safeDecodeBytes(bytes)
 }
 
 func readRequestBodyBytes(ctx: HttpContext): Array<Byte> {
@@ -145,7 +145,7 @@ func parseMultipartFormData(contentType: String, body: Array<Byte>): (String, Ar
         return ("upload.txt", body)
     }
 
-    let bodyStr = String.fromUtf8(body)
+    let bodyStr = safeDecodeBytes(body)
     let delimiter = "--${boundary}"
     let sections = bodyStr.split(delimiter)
 

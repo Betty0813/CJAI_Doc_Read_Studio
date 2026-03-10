@@ -12,7 +12,11 @@ cjc-version = "0.25.1"
 [build]
 target = "release"
 
-# stdx 指向你解压的路径（dynamic\stdx 为动态库）
+# stdx 路径配置（仅 Windows 需要）
+# 下载地址：https://gitcode.com/Cangjie/cangjie-stdx-bin
+# 解压后将下方路径改为你本机解压的目录，例如：
+#   path-option = ["C:/cangjie-stdx/windows_x86_64_llvm/dynamic/stdx"]
+# 若无 stdx 或不使用扩展标准库，可删除以下三行
 [target.x86_64-w64-mingw32]
 [target.x86_64-w64-mingw32.bin-dependencies]
 path-option = ["D:/Download/chrome/cangjie-stdx-windows-x64-1.0.1.1/windows_x86_64_llvm/dynamic/stdx"]

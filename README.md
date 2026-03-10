@@ -52,6 +52,7 @@ notepad .env
 
 # 4. 一键启动
 .\start.ps1
+或者powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
 启动后访问：**http://localhost:8000/**

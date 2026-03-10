@@ -13,14 +13,16 @@ function Stop-RunningBackendByPath {
     $resolved = Resolve-Path -LiteralPath $ExePath -ErrorAction SilentlyContinue
     $exe = if ($resolved) { $resolved.Path } else { $ExePath }
 
+    # NOTE: Avoid WMI/Get-CimInstance here (can hang on some systems).
     $maxAttempts = 12
     for ($i = 1; $i -le $maxAttempts; $i++) {
         $pids = @()
         try {
-            $procs = Get-CimInstance Win32_Process -Filter "Name='main.exe'" -ErrorAction SilentlyContinue
+            $procs = Get-Process -Name "main" -ErrorAction SilentlyContinue
             foreach ($p in $procs) {
-                if ($p.ExecutablePath -and ($p.ExecutablePath -ieq $exe)) {
-                    $pids += $p.ProcessId
+                # Path may require admin; treat missing path as match by name only.
+                if (-not $p.Path -or ($p.Path -ieq $exe)) {
+                    $pids += $p.Id
                 }
             }
         } catch { }
@@ -40,8 +42,7 @@ function Stop-RunningBackendByPath {
     }
 
     try {
-        $still = Get-CimInstance Win32_Process -Filter "Name='main.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.ExecutablePath -and ($_.ExecutablePath -ieq $exe) }
+        $still = Get-Process -Name "main" -ErrorAction SilentlyContinue | Where-Object { -not $_.Path -or ($_.Path -ieq $exe) }
         if ($still) {
             Write-Host "[ERROR] Backend is still running and locking build outputs: $exe" -ForegroundColor Red
             Write-Host "        Close the running server terminal (or kill the process) then retry." -ForegroundColor Red
@@ -108,8 +109,11 @@ $opensslSources = @(
 )
 foreach ($src in $opensslSources) {
     if (!(Test-Path $src)) { continue }
-    $ssl = Get-ChildItem $src -Filter "libssl-3-x64.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    $crypto = Get-ChildItem $src -Filter "libcrypto-3-x64.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    # Avoid -Recurse (can be slow). These DLLs should exist directly in the bin folder.
+    $sslPath = Join-Path $src "libssl-3-x64.dll"
+    $cryptoPath = Join-Path $src "libcrypto-3-x64.dll"
+    $ssl = if (Test-Path $sslPath) { Get-Item $sslPath -ErrorAction SilentlyContinue } else { $null }
+    $crypto = if (Test-Path $cryptoPath) { Get-Item $cryptoPath -ErrorAction SilentlyContinue } else { $null }
     if ($ssl -and $crypto) {
         New-Item -ItemType Directory -Force -Path $binDir | Out-Null
         Copy-WithRetry -Source $ssl.FullName -Dest (Join-Path $binDir "libssl.dll") | Out-Null

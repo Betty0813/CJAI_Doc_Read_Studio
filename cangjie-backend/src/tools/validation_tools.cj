@@ -138,38 +138,59 @@ public class DocumentValidator {
     }
 
     public func validateStructureCompliance(documentContent: String): ValidationMetric {
-        let requiredSections = ["Abstract", "Introduction", "Methodology", "Results", "Conclusion"]
-        let requiredSectionsCn = ["Summary", "Introduction", "Methods", "Results", "Conclusion"]
+        // 学术类关键区块
+        let academicSections = ["Abstract", "Introduction", "Methodology", "Results", "Conclusion"]
+        // 工具添加的标准区块
+        let toolSections = ["Executive Summary", "Glossary", "Real-World Case Studies", "Formatting Guide"]
+        // 中文/通用区块
+        let generalSections = ["Summary", "Overview", "Background", "Discussion", "References"]
 
         var foundCount: Int64 = 0
-        for (section in requiredSections) {
+        var totalChecked: Int64 = 0
+        for (section in academicSections) {
+            totalChecked += 1
             let regex = Regex("^#+\\s+${section}", RegexOption().multiLine())
             match (regex.matcher(documentContent).find()) { case Some(_) => foundCount += 1 case None => () }
         }
-        for (section in requiredSectionsCn) {
+        for (section in toolSections) {
+            totalChecked += 1
+            let regex = Regex("^#+\\s+${section}", RegexOption().multiLine())
+            match (regex.matcher(documentContent).find()) { case Some(_) => foundCount += 1 case None => () }
+        }
+        for (section in generalSections) {
+            totalChecked += 1
             let regex = Regex("^#+\\s+${section}", RegexOption().multiLine())
             match (regex.matcher(documentContent).find()) { case Some(_) => foundCount += 1 case None => () }
         }
 
-        let complianceRatio = Float64(foundCount) / 5.0
+        // 也统计文档中所有的二级标题数量（作为结构完整性指标）
+        let h2Regex = Regex("^##\\s+.+", RegexOption().multiLine())
+        let h2Matcher = h2Regex.matcher(documentContent)
+        var h2Count: Int64 = 0
+        while (true) {
+            match (h2Matcher.find()) { case Some(_) => h2Count += 1 case None => break }
+        }
+
         var score: Float64
         var status: String
         var details: String
-        if (complianceRatio >= 0.8) {
+        if (foundCount >= 3 || h2Count >= 5) {
             score = 100.0; status = "pass"
-            details = "Document has ${foundCount} of 5 required sections"
-        } else if (complianceRatio >= 0.6) {
+            details = "Document has ${foundCount} recognized sections, ${h2Count} level-2 headings"
+        } else if (foundCount >= 2 || h2Count >= 3) {
             score = 70.0; status = "warning"
-            details = "Document has only ${foundCount} of 5 required sections"
+            details = "Document has ${foundCount} recognized sections, ${h2Count} level-2 headings"
+        } else if (h2Count >= 1) {
+            score = 50.0; status = "warning"
+            details = "Document has minimal structure: ${h2Count} level-2 headings"
         } else {
-            score = 40.0; status = "fail"
-            details = "Document missing key sections"
+            score = 20.0; status = "fail"
+            details = "Document lacks clear section structure"
         }
 
         let recs = ArrayList<String>()
-        let missing = 5 - foundCount
-        if (missing > 0) {
-            recs.add("Add ${missing} missing sections")
+        if (foundCount < 3) {
+            recs.add("Add key sections: Executive Summary, Glossary, or Conclusion to improve structure")
         }
 
         let metric = ValidationMetric("Structure Compliance", score, status, details, recs)

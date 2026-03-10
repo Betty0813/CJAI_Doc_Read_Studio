@@ -1,5 +1,5 @@
 // Frontend Configuration
-// This file is dynamically updated by the startup script
+// Static config for the Cangjie-only build
 window.APP_CONFIG = {
     API_BASE_URL: 'http://localhost:8000',
     APP_NAME: 'AI Doc Read Studio',

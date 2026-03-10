@@ -12,6 +12,10 @@ class DocReadStudio {
         this.lastVersionCheck = null;
         this.buttonHandlers = {};
         this.currentEnterHandler = null;
+        this.streamingMessages = {}; // key -> { el, content }
+        this.promptRequestSeq = 0;
+        this.activePromptSeq = null;
+        this.hasRealtimeTrafficSincePrompt = false;
         
         // Get model configuration from config file
         this.modelOptions = window.APP_CONFIG?.models?.available || [
@@ -157,7 +161,15 @@ class DocReadStudio {
         
         switch (message.type) {
             case 'agent_response':
+                this.hasRealtimeTrafficSincePrompt = true;
                 this.handleRealtimeAgentResponse(message.data);
+                break;
+            case 'agent_response_chunk':
+                this.hasRealtimeTrafficSincePrompt = true;
+                this.handleRealtimeAgentResponseChunk(message.data);
+                break;
+            case 'agent_response_done':
+                this.handleRealtimeAgentResponseDone(message.data);
                 break;
             case 'agent_thinking':
                 // Show individual agent thinking with typing bubble
@@ -181,6 +193,83 @@ class DocReadStudio {
             default:
                 this.log('debug', 'Unknown WebSocket message type', message);
         }
+    }
+
+    getStreamingKey(agentName, timestamp) {
+        return `${agentName}__${timestamp}`;
+    }
+
+    ensureStreamingAgentMessage(meta) {
+        const agentName = meta.agent_name || 'Agent';
+        const timestamp = meta.timestamp || new Date().toISOString();
+        const key = this.getStreamingKey(agentName, timestamp);
+        if (this.streamingMessages[key]?.el) {
+            return this.streamingMessages[key];
+        }
+
+        const conversationDiv = this.getConversationDiv();
+        if (!conversationDiv) return null;
+
+        const messageDiv = this.createElement('div', 'message agent');
+        messageDiv.dataset.streamKey = key;
+        messageDiv.classList.add('message-streaming');
+
+        const displayName = (agentName || '').replace(/\s*\(Debate\)\s*$/, '');
+        const avatarText = displayName.charAt(0).toUpperCase() || 'A';
+        const header = meta.is_debate ? `${displayName} <span class="debate-badge">辩论</span>` : displayName;
+        const tsLabel = timestamp ? new Date(timestamp).toLocaleTimeString() : '';
+        const roleInfo = meta.role ? `<div style="font-size: 11px; opacity: 0.7; margin-bottom: 2px;">${meta.role}</div>` : '';
+
+        messageDiv.innerHTML = `
+            <div class="message-avatar">${avatarText}</div>
+            <div class="message-bubble">
+                <div class="message-header">
+                    <span>${header}</span>
+                    <span class="message-meta">${tsLabel}</span>
+                </div>
+                ${roleInfo}
+                <div class="message-content" style="white-space: pre-wrap;"></div>
+            </div>
+        `;
+
+        this.appendToConversation(messageDiv);
+
+        this.streamingMessages[key] = { el: messageDiv, content: '' };
+        return this.streamingMessages[key];
+    }
+
+    handleRealtimeAgentResponseChunk(chunk) {
+        // chunk: { agent_name, role, model, timestamp, delta, is_debate }
+        const entry = this.ensureStreamingAgentMessage(chunk);
+        if (!entry) return;
+
+        // Remove typing indicator as soon as first chunk arrives
+        if (chunk.agent_name) this.removeAgentTyping(chunk.agent_name);
+
+        entry.content += chunk.delta || '';
+
+        const contentEl = entry.el.querySelector('.message-content');
+        if (contentEl) {
+            // While streaming, show plain text (fast). We'll render markdown on "done".
+            contentEl.textContent = entry.content;
+        }
+    }
+
+    handleRealtimeAgentResponseDone(done) {
+        const agentName = done.agent_name || 'Agent';
+        const timestamp = done.timestamp || '';
+        const key = this.getStreamingKey(agentName, timestamp);
+        const entry = this.streamingMessages[key];
+        if (!entry?.el) return;
+
+        const contentEl = entry.el.querySelector('.message-content');
+        if (contentEl) {
+            contentEl.style.whiteSpace = '';
+            contentEl.innerHTML = this.formatMessageContent(entry.content);
+        }
+
+        if (agentName) this.removeAgentTyping(agentName);
+        entry.el.classList.remove('message-streaming');
     }
     
     handleRealtimeAgentResponse(agentResponse) {
@@ -1654,6 +1743,10 @@ class DocReadStudio {
         this.showAgentsThinking();
         
         try {
+            const seq = ++this.promptRequestSeq;
+            this.activePromptSeq = seq;
+            this.hasRealtimeTrafficSincePrompt = false;
+
             // Send all document IDs to the backend
             const documentIds = this.documents.map(doc => doc.id);
             
@@ -1715,9 +1808,14 @@ class DocReadStudio {
             // Clear the agents thinking animation
             this.clearAllTypingIndicators();
             
-            // Always render from HTTP response so first input shows even if WebSocket wasn't ready yet.
-            // (Backend broadcasts after the request completes; WebSocket may connect after that.)
-            if (promptResult.conversation && promptResult.conversation.length > 0) {
+            // Prefer realtime WS rendering. Only fall back to HTTP conversation when WS isn't available
+            // or no realtime chunks arrived for this prompt.
+            const wsOpen = this.websocket && this.websocket.readyState === WebSocket.OPEN;
+            if (wsOpen && !this.hasRealtimeTrafficSincePrompt) {
+                await new Promise(resolve => setTimeout(resolve, 600));
+            }
+            const shouldFallback = !wsOpen || !this.hasRealtimeTrafficSincePrompt;
+            if (shouldFallback && promptResult.conversation && promptResult.conversation.length > 0) {
                 this.displayConversation(promptResult.conversation);
             }
             this.showDocumentInfo();
@@ -1750,6 +1848,10 @@ class DocReadStudio {
         this.showAgentsThinking();
         
         try {
+            const seq = ++this.promptRequestSeq;
+            this.activePromptSeq = seq;
+            this.hasRealtimeTrafficSincePrompt = false;
+
             const response = await fetch(`${this.apiUrl}/sessions/${this.sessionId}/prompt`, {
                 method: 'POST',
                 headers: {
@@ -1769,8 +1871,15 @@ class DocReadStudio {
             // Clear thinking indicators
             this.clearAllTypingIndicators();
             
-            // Render full conversation from response so messages always show (don't rely only on WebSocket)
-            if (result.conversation && result.conversation.length > 0) {
+            // Prefer realtime WS rendering; only fall back when WS isn't delivering chunks.
+            // Give the WebSocket a short grace period (600ms) to deliver any in-flight chunks
+            // that were sent by the server just before the HTTP response was returned.
+            const wsOpen = this.websocket && this.websocket.readyState === WebSocket.OPEN;
+            if (wsOpen && !this.hasRealtimeTrafficSincePrompt) {
+                await new Promise(resolve => setTimeout(resolve, 600));
+            }
+            const shouldFallback = !wsOpen || !this.hasRealtimeTrafficSincePrompt;
+            if (shouldFallback && result.conversation && result.conversation.length > 0) {
                 this.displayConversation(result.conversation);
             }
             this.updateControlsVisibility();
@@ -2159,6 +2268,24 @@ class DocReadStudio {
         if (statusEl) statusEl.textContent = '正在运行文档改进…';
         this.log('info', 'Running document improvement agent loop');
         try {
+            let done = false;
+            const pollStatus = async () => {
+                while (!done) {
+                    try {
+                        const r = await fetch(`${this.apiUrl}/sessions/${this.sessionId}/agent-status`);
+                        const j = await r.json().catch(() => ({}));
+                        if (j?.state === 'running') {
+                            const s = j.status || '';
+                            if (statusEl) statusEl.textContent = s ? `正在运行文档改进… ${s}` : '正在运行文档改进…';
+                        }
+                    } catch (_) {
+                        // ignore transient polling errors
+                    }
+                    await new Promise(res => setTimeout(res, 1000));
+                }
+            };
+
+            const pollPromise = pollStatus();
             const response = await fetch(`${this.apiUrl}/sessions/${this.sessionId}/run-agent-loop`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2168,6 +2295,8 @@ class DocReadStudio {
             if (!response.ok) {
                 throw new Error(data.detail || response.statusText || '请求失败');
             }
+            done = true;
+            await pollPromise.catch(() => {});
             this.agentLoopReportData = data;
             this.displayAgentLoopReport(data);
             if (statusEl) statusEl.textContent = `已完成，共 ${data.total_iterations || 0} 轮迭代`;
@@ -2192,7 +2321,14 @@ class DocReadStudio {
 
         html += `<p><strong>状态:</strong> ${report.status || 'completed'} | <strong>迭代次数:</strong> ${report.total_iterations || 0} | <strong>收敛:</strong> ${report.converged ? '是' : '否'}</p>`;
         if (report.total_improvement_score != null) {
-            html += `<p><strong>总体改进分数:</strong> ${report.total_improvement_score.toFixed(1)}</p>`;
+            const v = Number(report.total_improvement_score);
+            if (Number.isFinite(v)) {
+                html += `<p><strong>总体改进分数:</strong> ${v.toFixed(1)}`;
+                if (v === 0) {
+                    html += ` <span style="color:#6c757d;font-size:12px;">（可能原因：未对文档执行修改工具，或修改后各维度分数无变化）</span>`;
+                }
+                html += `</p>`;
+            }
         }
 
         // 改进指标
@@ -2213,8 +2349,15 @@ class DocReadStudio {
                 const ref = iter.reflection || {};
                 if (ref.overall_improvement_score != null) {
                     html += ` | <strong>本轮改进分数: ${Number(ref.overall_improvement_score).toFixed(1)}</strong>`;
+                    if (Number(ref.overall_improvement_score) === 0 && iter.improvement_note) {
+                        html += ` <span style="color:#856404;font-size:12px;">${this.escapeHtml(iter.improvement_note)}</span>`;
+                    }
                 }
                 if (iter.actions && iter.actions.length) html += ` | 工具调用: ${iter.actions.join(', ')}`;
+                if (iter.metrics_before && Object.keys(iter.metrics_before).length) {
+                    const beforeStr = Object.entries(iter.metrics_before).map(([k, v]) => `${k}: ${typeof v === 'number' ? v.toFixed(1) : v}`).join(', ');
+                    html += `<div style="margin-top:4px; font-size:12px; color:#6c757d;">改进前维度分数: ${beforeStr}</div>`;
+                }
                 if (iter.error) html += ` | <span style="color:red">错误: ${iter.error}</span>`;
 
                 // ReAct 推理步骤
@@ -2387,6 +2530,17 @@ class DocReadStudio {
     }
     
     displayConversation(conversation) {
+        // If streaming messages are already displayed, skip the fallback to avoid overwriting them
+        const conversationDiv = this.getConversationDiv();
+        const hasStreamedContent = conversationDiv &&
+            (conversationDiv.querySelectorAll('.message.agent').length > 0 ||
+             Object.keys(this.streamingMessages).length > 0);
+        if (hasStreamedContent) {
+            this.log('debug', 'Skipping displayConversation fallback — streaming content already present');
+            this.updateControlsVisibility();
+            return;
+        }
+
         this.clearConversation();
         
         conversation.forEach(message => {

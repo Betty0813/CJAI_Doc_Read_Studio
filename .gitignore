@@ -45,6 +45,9 @@ sessions/
 backend/sessions/
 logs/
 backend/logs/
+
+# Cangjie build outputs (cjpm)
+cangjie-backend/target/
 *.log
 app.log
 startup.log

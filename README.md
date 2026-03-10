@@ -19,7 +19,7 @@
 
 | 层级     | 技术说明 |
 |----------|----------|
-| 后端     | FastAPI，REST + WebSocket |
+| 后端     | 仓颉（Cangjie），REST + WebSocket |
 | AI 调用  | OpenAI 兼容 API（可配置 `OPENAI_BASE_URL` 使用其他网关） |
 | 文档改进 | ReAct + Function Calling + 反思 + 长期记忆 |
 | 前端     | 原生 JS，单页应用 |
@@ -30,27 +30,22 @@
 
 ### 环境要求
 
-- Python 3.10+
-- [UV](https://docs.astral.sh/uv/) 包管理
+- 仓颉（Cangjie）SDK（含 `cjpm`）
 
 ### 安装与运行
 
 ```bash
-git clone https://github.com/ChailynCui/compet_agent.git
-cd compet_agent
-
-# 安装依赖
-uv sync
+cd ai-doc-read-studio
 
 # 配置环境变量：复制示例后编辑 .env，填入 OPENAI_API_KEY
-cp .env.example .env
+copy .env.example .env
 
-# 一键启动前后端
-uv run python start_app.py
+# Windows：一键启动（仓颉后端会同时托管前端静态文件）
+.\start.ps1
 ```
 
-- **前端**：<http://localhost:3000>  
-- **后端 API 文档**：<http://localhost:8000/docs>
+- **前端（Web UI）**：`http://localhost:8000/`
+- **后端 API**：`http://localhost:8000/`
 
 ### 环境变量（.env）
 
@@ -81,26 +76,30 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 
 ```
 ai-doc-read-studio/
-├── backend/
-│   ├── main.py              # FastAPI 入口、会话、上传、WebSocket、导出
-│   ├── agents.py            # 多角色讨论与辩论轮（create_agent, run_discussion_round）
-│   ├── document_parser.py   # 文档解析（PDF/DOCX/TXT/MD）
-│   ├── agent_engine/        # 文档改进 Agent
-│   │   ├── agent_loop.py    # 主循环：迭代 → ReAct → 验证 → 反思
-│   │   ├── llm_agent.py     # ReAct + Function Calling 工具定义与执行
-│   │   ├── reflection.py    # 改进效果评估与是否继续
-│   │   └── memory.py        # 长期记忆（策略与教训）
-│   └── tools/
-│       ├── document_tools.py   # 文档动作（术语表、摘要、案例、图表说明等）
-│       └── validation_tools.py # 文档质量指标（术语、结构、可读性、证据支撑等）
+├── cangjie-backend/
+│   ├── src/
+│   │   ├── main.cj              # 后端入口、会话、上传、WebSocket、导出 + 静态前端托管
+│   │   ├── agents.cj            # 多角色讨论与辩论轮
+│   │   ├── document_parser.cj   # 文档解析（TXT/MD；DOCX/PDF 当前不支持）
+│   │   ├── agent_engine/        # 文档改进 Agent
+│   │   │   ├── agent_loop.cj    # 主循环：迭代 → ReAct → 验证 → 反思
+│   │   │   ├── llm_agent.cj     # ReAct + Function Calling 工具定义与执行
+│   │   │   ├── reflection.cj    # 改进效果评估与是否继续
+│   │   │   └── memory.cj        # 长期记忆（策略与教训）
+│   │   ├── tools/
+│   │   │   ├── document_tools.cj
+│   │   │   └── validation_tools.cj
+│   │   └── utils/
+│   │       ├── http_client.cj
+│   │       ├── json_helper.cj
+│   │       └── env.cj
+│   └── start.ps1             # 编译 + 运行（处理 OpenSSL DLL）
 ├── frontend/
 │   ├── index.html
 │   ├── app.js
 │   └── config.js
-├── tests/
 ├── config.json              # 应用与模型配置
-├── start_app.py             # 统一启动脚本
-└── pyproject.toml
+└── start.ps1                # 根目录一键启动（调用 cangjie-backend/start.ps1）
 ```
 
 ---
@@ -115,18 +114,10 @@ ai-doc-read-studio/
 ## 开发与测试
 
 ```bash
-# 仅启动后端
-uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-
-# 仅启动前端（静态）
-uv run python -m http.server 3000 --directory frontend
-
-# 测试
-uv run pytest
-
-# 代码风格
-uv run ruff check .
-uv run black .
+# 后端（仓颉）
+cd cangjie-backend
+cjpm build
+cjpm run
 ```
 
 ---
@@ -136,6 +127,7 @@ uv run black .
 - **端口占用**：默认后端 8000、前端 3000，可在 `config.json` 中修改。
 - **首次输入无回复**：确保 `.env` 中 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL` 正确；回复会先通过 WebSocket 逐条展示，HTTP 返回后也会用完整会话渲染一次。
 - **文档改进报错**：需先完成至少一轮讨论，以便从对话中抽取改进建议。
+- **DOCX/PDF 上传失败**：仓颉版当前仅支持 TXT/MD 解析；请先将文档另存为 UTF-8 的 `.md` 或 `.txt` 再上传。
 
 ---
 

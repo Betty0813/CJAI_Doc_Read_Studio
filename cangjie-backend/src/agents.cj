@@ -124,7 +124,8 @@ public func runDiscussionRound(
     documents: ArrayList<DocumentInfo>,
     prompt: String,
     onAgentStart!: ?(String) -> Unit = None,
-    onAgentResponse!: ?(HashMap<String, JsonValue>) -> Unit = None
+    onAgentResponse!: ?(HashMap<String, JsonValue>) -> Unit = None,
+    onChunk!: ?(String, String, String, String, String) -> Unit = None
 ): ArrayList<HashMap<String, JsonValue>> {
     try {
         let documentsContent = parseMultipleDocuments(documents)
@@ -172,8 +173,12 @@ public func runDiscussionRound(
                 case Some(cb) => cb(member.name)
                 case None => ()
             }
-
-            let response = getAgentResponse(client, member, systemPrompt, prompt, session.sessionId)
+            let ts = DateTime.now().toString()
+            let chunkCb: ?(String) -> Unit = match (onChunk) {
+                case Some(f) => Some({ delta: String => f(member.name, member.role, member.model, ts, delta) })
+                case None => None
+            }
+            let response = getAgentResponse(client, member, systemPrompt, prompt, session.sessionId, onChunk: chunkCb)
             regularResponses.add(response)
 
             match (onAgentResponse) {
@@ -198,7 +203,12 @@ public func runDiscussionRound(
                     updatedHistory += "\n<agent_message agent='${name}' role='${role}'>${content}</agent_message>"
                 }
                 let modSystemPrompt = createSystemPrompt(modMember, documentsContent, updatedHistory)
-                let modResp = getAgentResponse(client, modMember, modSystemPrompt, prompt, session.sessionId)
+                let modTs = DateTime.now().toString()
+                let modChunkCb: ?(String) -> Unit = match (onChunk) {
+                    case Some(f) => Some({ delta: String => f(modMember.name, modMember.role, modMember.model, modTs, delta) })
+                    case None => None
+                }
+                let modResp = getAgentResponse(client, modMember, modSystemPrompt, prompt, session.sessionId, onChunk: modChunkCb)
                 moderatorResponse = modResp
                 match (onAgentResponse) {
                     case Some(cb) => cb(modResp)
@@ -245,25 +255,49 @@ func getAgentResponse(
     member: TeamMember,
     systemPrompt: String,
     prompt: String,
-    sessionId: String
+    sessionId: String,
+    onChunk!: ?(String) -> Unit = None
 ): HashMap<String, JsonValue> {
     let agentPrompt = "Current discussion prompt: ${prompt}\n\nPlease provide your perspective from your role as ${member.role}. Focus on actionable feedback."
     let modelId = getBedrockModelId(member.model)
 
+    let messages = ArrayList<HashMap<String, String>>()
+    let sysMsg = HashMap<String, String>()
+    sysMsg["role"] = "system"
+    sysMsg["content"] = systemPrompt
+    messages.add(sysMsg)
+    let userMsg = HashMap<String, String>()
+    userMsg["role"] = "user"
+    userMsg["content"] = agentPrompt
+    messages.add(userMsg)
+
     try {
-        let (responseText, responseTime) = invokeWithRetry(
-            client, systemPrompt, agentPrompt, modelId
-        )
-
-        tokenTracker.trackAgentInvocation(
-            sessionId, member.name, member.model,
-            agentPrompt, responseText, responseTime
-        )
-
-        return makeAgentMessage(
-            member.id, member.name, member.role, member.model,
-            responseText, responseTime: responseTime
-        )
+        match (onChunk) {
+            case Some(cb) =>
+                let startTime = DateTime.now()
+                let responseText = client.chatCompletionStream(modelId, messages, cb)
+                let elapsedSec = 0.0
+                tokenTracker.trackAgentInvocation(
+                    sessionId, member.name, member.model,
+                    agentPrompt, responseText, elapsedSec
+                )
+                return makeAgentMessage(
+                    member.id, member.name, member.role, member.model,
+                    responseText, responseTime: elapsedSec
+                )
+            case None =>
+                let (responseText, responseTime) = invokeWithRetry(
+                    client, systemPrompt, agentPrompt, modelId
+                )
+                tokenTracker.trackAgentInvocation(
+                    sessionId, member.name, member.model,
+                    agentPrompt, responseText, responseTime
+                )
+                return makeAgentMessage(
+                    member.id, member.name, member.role, member.model,
+                    responseText, responseTime: responseTime
+                )
+        }
     } catch (e: Exception) {
         return makeAgentMessage(
             member.id, member.name, member.role, member.model,

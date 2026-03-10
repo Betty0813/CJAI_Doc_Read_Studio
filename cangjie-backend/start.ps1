@@ -1,25 +1,91 @@
-# AI Doc Read Studio - Cangjie Backend 启动脚本
-# 确保已安装 Cangjie SDK 并配置好环境变量
-#
-# 正确运行方式（任选其一）：
-#   1. 在 PowerShell 里：cd 到 cangjie-backend 后执行 .\start.ps1
-#   2. 双击 run.cmd（会真正执行脚本，不会用笔记本/编辑器打开）
-
 Set-Location $PSScriptRoot
 
 Write-Host "=== AI Doc Read Studio (Cangjie Backend) ===" -ForegroundColor Cyan
 
-# 检查 .env 文件
-if (!(Test-Path "../.env")) {
-    Write-Host "[WARN] .env file not found. Copy .env.example to .env and set OPENAI_API_KEY" -ForegroundColor Yellow
+$binDir = Join-Path $PSScriptRoot "target\release\bin"
+$backendExe = Join-Path $binDir "main.exe"
+
+function Stop-RunningBackendByPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExePath
+    )
+
+    $resolved = Resolve-Path -LiteralPath $ExePath -ErrorAction SilentlyContinue
+    $exe = if ($resolved) { $resolved.Path } else { $ExePath }
+
+    $maxAttempts = 12
+    for ($i = 1; $i -le $maxAttempts; $i++) {
+        $pids = @()
+        try {
+            $procs = Get-CimInstance Win32_Process -Filter "Name='main.exe'" -ErrorAction SilentlyContinue
+            foreach ($p in $procs) {
+                if ($p.ExecutablePath -and ($p.ExecutablePath -ieq $exe)) {
+                    $pids += $p.ProcessId
+                }
+            }
+        } catch { }
+
+        if (-not $pids -or $pids.Count -eq 0) {
+            return
+        }
+
+        if ($i -eq 1) {
+            Write-Host "[INFO] Stopping running backend (releases main.exe / OpenSSL DLL locks)..." -ForegroundColor Yellow
+        }
+
+        foreach ($procId in $pids) {
+            try { Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue } catch { }
+        }
+        Start-Sleep -Milliseconds (250 + 250 * $i)
+    }
+
+    try {
+        $still = Get-CimInstance Win32_Process -Filter "Name='main.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.ExecutablePath -and ($_.ExecutablePath -ieq $exe) }
+        if ($still) {
+            Write-Host "[ERROR] Backend is still running and locking build outputs: $exe" -ForegroundColor Red
+            Write-Host "        Close the running server terminal (or kill the process) then retry." -ForegroundColor Red
+            exit 1
+        }
+    } catch { }
 }
 
-# 创建必要目录
-New-Item -ItemType Directory -Force -Path "../uploads" | Out-Null
-New-Item -ItemType Directory -Force -Path "../sessions" | Out-Null
-New-Item -ItemType Directory -Force -Path "../logs" | Out-Null
+function Copy-WithRetry {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Dest,
+        [int]$Attempts = 6
+    )
 
-# 配置 OpenSSL CA 证书包（让 TLS 可以验证 HTTPS 服务器证书）
+    for ($i = 1; $i -le $Attempts; $i++) {
+        try {
+            Copy-Item -LiteralPath $Source -Destination $Dest -Force -ErrorAction Stop
+            return $true
+        } catch {
+            if ($i -eq $Attempts) {
+                Write-Host "[WARN] Copy failed (likely locked): $Dest. Keeping existing file." -ForegroundColor Yellow
+                return $false
+            }
+            Start-Sleep -Milliseconds (200 * $i)
+        }
+    }
+    return $false
+}
+
+# Stop previous instance (prevents Permission denied on link step and DLL copy failures)
+Stop-RunningBackendByPath -ExePath $backendExe
+
+# Check .env exists at repo root
+if (!(Test-Path "..\.env")) {
+    Write-Host "[WARN] .env not found at repo root. Copy .env.example to .env and set OPENAI_API_KEY." -ForegroundColor Yellow
+}
+
+# Runtime directories (relative to cangjie-backend/)
+New-Item -ItemType Directory -Force -Path ".\uploads" | Out-Null
+New-Item -ItemType Directory -Force -Path ".\sessions" | Out-Null
+New-Item -ItemType Directory -Force -Path ".\logs" | Out-Null
+
+# CA bundle for TLS
 $caBundleCandidates = @(
     "D:\miniconda\Library\ssl\cacert.pem",
     "D:\miniconda\lib\site-packages\certifi\cacert.pem",
@@ -35,35 +101,73 @@ foreach ($ca in $caBundleCandidates) {
     }
 }
 
-# 确保 OpenSSL 3 DLL 在可执行文件旁边（Cangjie TLS 需要）
-$binDir = Join-Path $PSScriptRoot "target\release\bin"
+# Ensure OpenSSL 3 DLLs next to the built exe (Cangjie TLS needs them)
 $opensslSources = @(
     "C:\Program Files\MySQL\MySQL Server 8.0\bin",
-    "C:\Program Files\Microsoft OneDrive"
+    "C:\Program Files\OpenSSL-Win64\bin"
 )
 foreach ($src in $opensslSources) {
+    if (!(Test-Path $src)) { continue }
     $ssl = Get-ChildItem $src -Filter "libssl-3-x64.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
     $crypto = Get-ChildItem $src -Filter "libcrypto-3-x64.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($ssl -and $crypto) {
         New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-        Copy-Item $ssl.FullName "$binDir\libssl.dll" -Force
-        Copy-Item $ssl.FullName "$binDir\libssl-3-x64.dll" -Force
-        Copy-Item $crypto.FullName "$binDir\libcrypto.dll" -Force
-        Copy-Item $crypto.FullName "$binDir\libcrypto-3-x64.dll" -Force
+        Copy-WithRetry -Source $ssl.FullName -Dest (Join-Path $binDir "libssl.dll") | Out-Null
+        Copy-WithRetry -Source $ssl.FullName -Dest (Join-Path $binDir "libssl-3-x64.dll") | Out-Null
+        Copy-WithRetry -Source $crypto.FullName -Dest (Join-Path $binDir "libcrypto.dll") | Out-Null
+        Copy-WithRetry -Source $crypto.FullName -Dest (Join-Path $binDir "libcrypto-3-x64.dll") | Out-Null
         Write-Host "[INFO] OpenSSL 3 DLLs copied from $src" -ForegroundColor Green
         break
     }
 }
 
-# 编译
-Write-Host "[INFO] Compiling Cangjie backend..." -ForegroundColor Green
-cjpm build
+# Find Cangjie SDK root and add all required paths to PATH
+$cangjieRoots = @("D:\Cangjie", "C:\Cangjie")
+$cjpmExe = $null
+foreach ($root in $cangjieRoots) {
+    $candidate = Join-Path $root "tools\bin\cjpm.exe"
+    if (Test-Path $candidate) {
+        $cjpmExe = $candidate
+        $dirsToAdd = @(
+            (Join-Path $root "tools\bin"),
+            (Join-Path $root "bin"),
+            (Join-Path $root "runtime\lib\windows_x86_64_llvm"),
+            (Join-Path $root "third_party\llvm\bin"),
+            (Join-Path $root "third_party\mingw\bin")
+        )
+        foreach ($d in $dirsToAdd) {
+            if ((Test-Path $d) -and ($env:PATH -notlike "*$d*")) {
+                $env:PATH = "$d;" + $env:PATH
+            }
+        }
+        Write-Host "[INFO] Cangjie SDK found at: $root" -ForegroundColor Green
+        break
+    }
+}
+if (-not $cjpmExe) {
+    Write-Host "[ERROR] Cannot find cjpm.exe. Please install Cangjie SDK to D:\Cangjie or C:\Cangjie." -ForegroundColor Red
+    exit 1
+}
 
+Write-Host "[INFO] Compiling Cangjie backend..." -ForegroundColor Green
+Stop-RunningBackendByPath -ExePath $backendExe
+
+if (Test-Path $backendExe) {
+    for ($i = 1; $i -le 6; $i++) {
+        try {
+            Remove-Item -LiteralPath $backendExe -Force -ErrorAction Stop
+            break
+        } catch {
+            Start-Sleep -Milliseconds (200 * $i)
+        }
+    }
+}
+
+& $cjpmExe build
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] Compilation failed!" -ForegroundColor Red
     exit 1
 }
 
-# 运行（SSL_CERT_FILE 已在上方设好，OpenSSL 会读取该 CA bundle）
 Write-Host "[INFO] Starting server on http://0.0.0.0:8000 ..." -ForegroundColor Green
-cjpm run
+& $cjpmExe run

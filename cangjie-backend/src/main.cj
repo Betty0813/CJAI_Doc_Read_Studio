@@ -21,6 +21,7 @@ let APP_START_TIME = DateTime.now().toString()
 let MAX_FILE_SIZE: Int64 = 10 * 1024 * 1024
 let UPLOAD_DIR = "uploads"
 let SESSIONS_DIR = "sessions"
+let FRONTEND_DIR = "../frontend"
 
 // ========== WebSocket Types ==========
 class ConnectionManager {
@@ -210,6 +211,114 @@ func errorResponse(ctx: HttpContext, detail: String, status!: UInt16 = 400): Uni
     jsonResponse(ctx, err, status: status)
 }
 
+func serveStaticTextFile(ctx: HttpContext, filePath: String, contentType: String): Unit {
+    addCorsHeaders(ctx)
+    try {
+        let bytes = File.readFrom(filePath)
+        let body = safeDecodeBytes(bytes)
+        ctx.responseBuilder
+            .status(200)
+            .header("Content-Type", contentType)
+            .header("Cache-Control", "no-cache, no-store, must-revalidate")
+            .header("Pragma", "no-cache")
+            .header("Expires", "0")
+            .body(body)
+    } catch (_: Exception) {
+        addCorsHeaders(ctx)
+        ctx.responseBuilder
+            .status(404)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .body("Not Found")
+    }
+}
+
+func getFirstHeaderValue(ctx: HttpContext, name: String): String {
+    let values = ctx.request.headers.get(name)
+    for (v in values) { return v }
+    return ""
+}
+
+func wantsHtml(ctx: HttpContext): Bool {
+    let accept = getFirstHeaderValue(ctx, "Accept")
+    return accept.contains("text/html")
+}
+
+func jStr(m: HashMap<String, JsonValue>, key: String): String {
+    match (m.get(key)) {
+        case Some(v) => v.getString() ?? ""
+        case None => ""
+    }
+}
+
+func jBool(m: HashMap<String, JsonValue>, key: String): Bool {
+    match (m.get(key)) {
+        case Some(v) => v.getBool() ?? false
+        case None => false
+    }
+}
+
+// Send a single streaming chunk (used when LLM streams in real time).
+func sendAgentChunk(
+    ws: ConnectionManager, sessionId: String,
+    agentName: String, role: String, model: String, ts: String, delta: String,
+    isDebate: Bool
+): Unit {
+    if (delta.size == 0) { return }
+    let msg = jsonObj([
+        ("type", JsonValue.JsonString("agent_response_chunk")),
+        ("data", jsonObj([
+            ("agent_name", JsonValue.JsonString(agentName)),
+            ("role", JsonValue.JsonString(role)),
+            ("model", JsonValue.JsonString(model)),
+            ("timestamp", JsonValue.JsonString(ts)),
+            ("delta", JsonValue.JsonString(delta)),
+            ("is_debate", JsonValue.JsonBool(isDebate))
+        ]))
+    ])
+    ws.broadcastToSession(msg.toJsonString(), sessionId)
+}
+
+// Send done + finished only (after real-time streaming; no content re-send).
+func finishAgentResponse(ws: ConnectionManager, sessionId: String, response: HashMap<String, JsonValue>): Unit {
+    let agentName = jStr(response, "agent_name")
+    let ts = jStr(response, "timestamp")
+    let isDebate = jBool(response, "is_debate")
+    let doneMsg = jsonObj([
+        ("type", JsonValue.JsonString("agent_response_done")),
+        ("data", jsonObj([
+            ("agent_name", JsonValue.JsonString(agentName)),
+            ("timestamp", JsonValue.JsonString(ts)),
+            ("is_debate", JsonValue.JsonBool(isDebate))
+        ]))
+    ])
+    ws.broadcastToSession(doneMsg.toJsonString(), sessionId)
+    let finished = jsonObj([
+        ("type", JsonValue.JsonString("agent_finished")),
+        ("data", jsonObj([("agent_name", JsonValue.JsonString(agentName))]))
+    ])
+    ws.broadcastToSession(finished.toJsonString(), sessionId)
+}
+
+func streamAgentResponse(ws: ConnectionManager, sessionId: String, response: HashMap<String, JsonValue>): Unit {
+    let agentName = jStr(response, "agent_name")
+    let role = jStr(response, "role")
+    let model = jStr(response, "model")
+    let ts = jStr(response, "timestamp")
+    let content = jStr(response, "content")
+    let isDebate = jBool(response, "is_debate")
+
+    // Fallback: when not using LLM stream, send content line-by-line for progressive display
+    let text = content.replace("\r\n", "\n")
+    let lines = text.split("\n")
+    for (line in lines) {
+        let delta = line + "\n"
+        if (delta.trimAscii().size == 0) { continue }
+        sendAgentChunk(ws, sessionId, agentName, role, model, ts, delta, isDebate)
+        sleep(Duration.millisecond * 30)
+    }
+    finishAgentResponse(ws, sessionId, response)
+}
+
 // ========== Route Handlers ==========
 // (see code)
 
@@ -394,7 +503,25 @@ main() {
     // GET /
     server.distributor.register("/", { ctx =>
         if (ctx.request.method == "OPTIONS") { handleCorsOptions(ctx); return }
-        jsonResponse(ctx, jsonObj([("message", JsonValue.JsonString("AI Doc Read Studio API"))]))
+        if (ctx.request.method == "GET" && wantsHtml(ctx)) {
+            serveStaticTextFile(ctx, "${FRONTEND_DIR}/index.html", "text/html; charset=utf-8")
+        } else {
+            jsonResponse(ctx, jsonObj([("message", JsonValue.JsonString("AI Doc Read Studio API"))]))
+        }
+    })
+
+    // Frontend static assets (served by backend so no separate frontend server is required)
+    server.distributor.register("/app.js", { ctx =>
+        if (ctx.request.method == "OPTIONS") { handleCorsOptions(ctx); return }
+        serveStaticTextFile(ctx, "${FRONTEND_DIR}/app.js", "application/javascript; charset=utf-8")
+    })
+    server.distributor.register("/config.js", { ctx =>
+        if (ctx.request.method == "OPTIONS") { handleCorsOptions(ctx); return }
+        serveStaticTextFile(ctx, "${FRONTEND_DIR}/config.js", "application/javascript; charset=utf-8")
+    })
+    server.distributor.register("/index.html", { ctx =>
+        if (ctx.request.method == "OPTIONS") { handleCorsOptions(ctx); return }
+        serveStaticTextFile(ctx, "${FRONTEND_DIR}/index.html", "text/html; charset=utf-8")
     })
 
     // GET /version
@@ -702,18 +829,18 @@ func handlePrompt(ctx: HttpContext, sessionId: String): Unit {
                         wsManager.broadcastToSession(msg.toJsonString(), sessionId)
                     }
 
+                    let onChunk = { agentName: String, role: String, model: String, ts: String, delta: String =>
+                        sendAgentChunk(wsManager, sessionId, agentName, role, model, ts, delta, false)
+                    }
+
                     let onResponse = { response: HashMap<String, JsonValue> =>
                         session.conversation.add(response)
-                        let msg = jsonObj([
-                            ("type", JsonValue.JsonString("agent_response")),
-                            ("data", JsonValue.JsonObject(response))
-                        ])
-                        wsManager.broadcastToSession(msg.toJsonString(), sessionId)
+                        finishAgentResponse(wsManager, sessionId, response)
                     }
 
                     let responses = runDiscussionRound(
                         session, sessionDocs, req.prompt,
-                        onAgentStart: onStart, onAgentResponse: onResponse
+                        onAgentStart: onStart, onAgentResponse: onResponse, onChunk: onChunk
                     )
 
                     jsonResponse(ctx, jsonObj([("conversation", conversationToJson(session.conversation))]))

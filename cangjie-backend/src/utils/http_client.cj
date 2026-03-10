@@ -95,6 +95,79 @@ public class OpenAIClient {
         }
     }
 
+    // Stream chat completion: call onChunk(delta) for each content delta, return full content.
+    public func chatCompletionStream(
+        model: String,
+        messages: ArrayList<HashMap<String, String>>,
+        onChunk: (String) -> Unit,
+        maxTokens!: Int64 = 2048,
+        temperature!: Float64 = 0.7
+    ): String {
+        let url = "${baseUrl}/chat/completions"
+        let msgParts = ArrayList<String>()
+        for (msg in messages) {
+            let role = msg.get("role") ?? ""
+            let content = msg.get("content") ?? ""
+            msgParts.add("{\"role\":${safeJsonString(role)},\"content\":${safeJsonString(content)}}")
+        }
+        var messagesJson = "["
+        var first = true
+        for (part in msgParts) {
+            if (!first) { messagesJson += "," }
+            messagesJson += part
+            first = false
+        }
+        messagesJson += "]"
+        let bodyJson = "{\"model\":${safeJsonString(model)},\"messages\":${messagesJson},\"max_tokens\":${maxTokens},\"temperature\":${temperature},\"stream\":true}"
+        let request = HttpRequestBuilder()
+            .method("POST")
+            .url(url)
+            .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer ${apiKey}")
+            .header("Accept", "text/event-stream")
+            .header("Accept-Encoding", "identity")
+            .body(bodyJson)
+            .build()
+        let response = client.send(request)
+        let sb = StringBuilder()
+        let buf = Array<Byte>(4096, repeat: 0)
+        var lineBuf = StringBuilder()
+        while (true) {
+            var n: Int64 = 0
+            try { n = response.body.read(buf) } catch (_: Exception) { break }
+            if (n <= 0) { break }
+            let chunk = Array<Byte>(n, repeat: 0)
+            for (i in 0..n) { chunk[i] = buf[i] }
+            lineBuf.append(safeDecodeBytes(chunk))
+            while (true) {
+                let full = lineBuf.toString()
+                match (full.indexOf("\n")) {
+                    case Some(idx) =>
+                        let line = full[0..idx].trimAscii()
+                        lineBuf = StringBuilder()
+                        if (idx + 1 < full.size) { lineBuf.append(full[idx + 1..]) }
+                        if (line.startsWith("data: ")) {
+                            let payload = line[6..]
+                            if (payload == "[DONE]") { return sb.toString() }
+                            if (payload.size == 0) { () } else {
+                                match (parseJson(payload)) {
+                                    case Some(json) =>
+                                        let delta = extractStreamDelta(json)
+                                        if (delta.size > 0) {
+                                            sb.append(delta)
+                                            onChunk(delta)
+                                        }
+                                    case None => ()
+                                }
+                            }
+                        }
+                    case None => break
+                }
+            }
+        }
+        return sb.toString()
+    }
+
     public func close(): Unit {
         client.close()
     }
@@ -240,6 +313,24 @@ func extractChatContent(json: JsonValue): String {
                 match (choices[0]["message"]) {
                     case Some(msg) =>
                         match (msg["content"]) {
+                            case Some(JsonValue.JsonString(s)) => return s
+                            case _ => ()
+                        }
+                    case None => ()
+                }
+            }
+        case _ => ()
+    }
+    return ""
+}
+
+func extractStreamDelta(json: JsonValue): String {
+    match (json["choices"]) {
+        case Some(JsonValue.JsonArray(choices)) =>
+            if (choices.size > 0) {
+                match (choices[0]["delta"]) {
+                    case Some(delta) =>
+                        match (delta["content"]) {
                             case Some(JsonValue.JsonString(s)) => return s
                             case _ => ()
                         }

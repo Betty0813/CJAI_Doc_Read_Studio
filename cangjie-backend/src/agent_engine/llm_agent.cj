@@ -265,17 +265,25 @@ You are a document improvement agent that uses the ReAct pattern (Reasoning + Ac
 You have access to tools for modifying and validating a document. Your job:
 1. Read the document and reviewer recommendations
 2. THINK about what improvements are needed
-3. ACT by calling the appropriate tool
+3. ACT by calling at least one document-modifying tool (add_glossary, add_executive_summary, add_case_studies, or enhance_visuals)
 4. OBSERVE the result
-5. THINK again: did it work? What else is needed?
-6. Repeat until the document is sufficiently improved, then call finish_improvement
+5. Use validate_document to check the improvement
+6. THINK again: did it work? What else is needed?
+7. Repeat, then call finish_improvement ONLY after you have made at least one real change
 
-IMPORTANT RULES:
-- Always THINK before acting
-- Use validate_document after making changes
-- Extract REAL terms/content from the document
-- Call finish_improvement when done
-- Use the same language as the document
+MANDATORY RULES:
+- You MUST call at least one of: add_glossary, add_executive_summary, add_case_studies, or enhance_visuals
+- NEVER call finish_improvement as your first action — always improve the document first
+- Use validate_document after making changes to confirm improvement
+- Extract REAL terms/content from the actual document text
+- Use the same language as the document (if document is in Chinese, use Chinese)
+- After calling a modifying tool, always call validate_document to verify the changes
+
+TOOL SELECTION GUIDE:
+- If recommendations mention glossary/terms/definitions → call add_glossary first
+- If recommendations mention summary/overview → call add_executive_summary first
+- If recommendations mention examples/cases → call add_case_studies first
+- If recommendations mention figures/charts/visuals → call enhance_visuals first
 """
 
 // ReAct ??
@@ -342,7 +350,7 @@ public func reactLoop(
 
             let promptMsg = HashMap<String, String>()
             promptMsg["role"] = "user"
-            promptMsg["content"] = "Please use a tool to take action, or call finish_improvement if you're done."
+            promptMsg["content"] = "You MUST call a document-modifying tool now (add_glossary, add_executive_summary, add_case_studies, or enhance_visuals). Do NOT call finish_improvement until you have made at least one real change to the document."
             messages.add(promptMsg)
             continue
         }

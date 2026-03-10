@@ -305,7 +305,24 @@ public func reactLoop(
     let recsText = recsSb.toString()
 
     let systemPrompt = REACT_SYSTEM_PROMPT + "\n" + memoryContext
-    let userContent = "Document (excerpt):\n${truncate(doc, MAX_DOC_CHARS)}\n\nReviewer recommendations:\n${recsText}\n\nThink step by step about what improvements to make, then use your tools."
+
+    // 运行初始验证，获取当前指标分数以指导 LLM 优先处理低分项
+    let glossaryMetric = documentValidator.validateGlossaryCompleteness(doc)
+    let evidenceMetric = documentValidator.validateEvidenceSupport(doc)
+    let visualMetric = documentValidator.validateVisualConsistency(doc)
+    let glossaryScore = glossaryMetric.score
+    let evidenceScore = evidenceMetric.score
+    let visualScore = visualMetric.score
+
+    let scoresSb = StringBuilder()
+    scoresSb.append("Current document quality scores:\n")
+    scoresSb.append("- glossary_completeness: ${glossaryScore}/100 -> use add_glossary to improve\n")
+    scoresSb.append("- evidence_support: ${evidenceScore}/100 -> use add_case_studies to improve\n")
+    scoresSb.append("- visual_consistency: ${visualScore}/100 -> use enhance_visuals to improve\n")
+    scoresSb.append("PRIORITY RULE: Call add_glossary FIRST if glossary_completeness < 100.\n")
+    let scoresHint = scoresSb.toString()
+
+    let userContent = "Document (excerpt):\n${truncate(doc, MAX_DOC_CHARS)}\n\n${scoresHint}\nReviewer recommendations:\n${recsText}\n\nIMPORTANT: Call each tool at most ONCE per iteration. Prioritize the lowest-scoring metric. Call finish_improvement only after you have used at least one tool."
 
     let messages = ArrayList<HashMap<String, String>>()
     let sysMsg = HashMap<String, String>()
@@ -320,21 +337,43 @@ public func reactLoop(
 
     let steps = jsonArray()
     let actionsTaken = ArrayList<String>()
+    // 去重：每种文档修改工具在一轮中只执行一次
+    let executedToolTypes = HashSet<String>()
     var finalReasoning = ""
+    var hasDocModification = false
 
     let toolsJson = getAgentToolsJson()
 
     for (stepIdx in 0..MAX_REACT_STEPS) {
+        // 构建本次 API 调用的临时消息列表（复制 messages，不修改原列表）
+        let stepMessages = ArrayList<HashMap<String, String>>()
+        for (m in messages) { stepMessages.add(m) }
+
+        // 将"已用工具"状态注入到本次调用（临时，不持久化到 messages）
+        if (executedToolTypes.size > 0) {
+            let doneToolsSb = StringBuilder()
+            for (t in executedToolTypes) {
+                if (doneToolsSb.size > 0) { doneToolsSb.append(", ") }
+                doneToolsSb.append(t)
+            }
+            let doneStr = doneToolsSb.toString()
+            let hintMsg = HashMap<String, String>()
+            hintMsg["role"] = "user"
+            hintMsg["content"] = "Tools already used this iteration: [${doneStr}]. Do NOT call these again. Choose a different tool or call finish_improvement if all improvements are done."
+            stepMessages.add(hintMsg)
+        }
+
         let (responseText, fullResponse) = client.chatCompletion(
-            model, messages, tools: toolsJson
+            model, stepMessages, tools: toolsJson
         )
 
         let thought = responseText
 
-        // ????? tool_calls
+        // 提取 tool_calls
         let toolCalls = extractToolCalls(fullResponse)
 
         if (toolCalls.size == 0) {
+            // LLM 没有调用工具，记录 thought 并提示
             steps.add(jsonObj([
                 ("step", JsonValue.JsonInt(stepIdx)),
                 ("thought", JsonValue.JsonString(thought)),
@@ -348,9 +387,14 @@ public func reactLoop(
             assistMsg["content"] = thought
             messages.add(assistMsg)
 
+            let nextPrompt = if (hasDocModification) {
+                "You have made some improvements. You may call finish_improvement to complete this iteration, or call a tool you have NOT yet used."
+            } else {
+                "You MUST call a document-modifying tool (add_glossary, add_executive_summary, add_case_studies, or enhance_visuals). Do NOT call finish_improvement without making at least one change."
+            }
             let promptMsg = HashMap<String, String>()
             promptMsg["role"] = "user"
-            promptMsg["content"] = "You MUST call a document-modifying tool now (add_glossary, add_executive_summary, add_case_studies, or enhance_visuals). Do NOT call finish_improvement until you have made at least one real change to the document."
+            promptMsg["content"] = nextPrompt
             messages.add(promptMsg)
             continue
         }
@@ -359,6 +403,29 @@ public func reactLoop(
             let fnName = tc.get("name") ?? ""
             let fnArgsStr = tc.get("arguments") ?? "{}"
             let fnArgs = parseJson(fnArgsStr) ?? JsonValue.JsonObject(jsonObject())
+
+            let isDocTool = fnName == "add_glossary" || fnName == "add_executive_summary" ||
+                            fnName == "add_case_studies" || fnName == "enhance_visuals"
+
+            // 文档修改工具去重：同类工具本轮只执行一次
+            if (isDocTool && executedToolTypes.contains(fnName)) {
+                steps.add(jsonObj([
+                    ("step", JsonValue.JsonInt(stepIdx)),
+                    ("thought", JsonValue.JsonString(thought)),
+                    ("action", JsonValue.JsonString(fnName)),
+                    ("observation", JsonValue.JsonString("Already used ${fnName} this iteration. Skipped."))
+                ]))
+                // 持久化到对话历史：告知 LLM 这个工具已跳过
+                let skipAssist = HashMap<String, String>()
+                skipAssist["role"] = "assistant"
+                skipAssist["content"] = thought
+                messages.add(skipAssist)
+                let skipObs = HashMap<String, String>()
+                skipObs["role"] = "user"
+                skipObs["content"] = "${fnName} was already used. Please call a different tool or finish_improvement."
+                messages.add(skipObs)
+                continue
+            }
 
             let (observation, updatedDoc) = executeToolCall(
                 fnName, fnArgs, documentTools, documentValidator, doc
@@ -372,6 +439,21 @@ public func reactLoop(
                 ("observation", JsonValue.JsonString(observation))
             ]))
             actionsTaken.add(fnName)
+
+            if (isDocTool) {
+                executedToolTypes.add(fnName)
+                hasDocModification = true
+            }
+
+            // 持久化工具调用结果到对话历史（使用干净格式，不含特殊前缀）
+            let assistToolMsg = HashMap<String, String>()
+            assistToolMsg["role"] = "assistant"
+            assistToolMsg["content"] = thought
+            messages.add(assistToolMsg)
+            let obsMsg = HashMap<String, String>()
+            obsMsg["role"] = "user"
+            obsMsg["content"] = "Tool result for ${fnName}: ${observation}"
+            messages.add(obsMsg)
 
             if (fnName == "finish_improvement") {
                 var fnReason = jsonStr(fnArgs["reasoning"])

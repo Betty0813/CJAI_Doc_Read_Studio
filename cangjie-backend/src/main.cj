@@ -467,6 +467,8 @@ main() {
     // Read config: try cwd .env then project root ../.env
     loadDotEnv(path: ".env")
     loadDotEnv(path: "../.env")
+    // 重新初始化 LLM 客户端（全局 agentLoopManager 在 .env 加载前已构造，须重新读取 API Key）
+    agentLoopManager.reinitClient()
 
     // Load templates
     try {

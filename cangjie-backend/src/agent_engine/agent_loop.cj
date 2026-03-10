@@ -482,7 +482,21 @@ public class AgentLoopManager {
             ("max_iterations", JsonValue.JsonInt(maxIterations))
         ])
     }
+
+    // 在 .env 加载完毕后调用，用最新的环境变量重新初始化 LLM 客户端
+    public func reinitClient(): Unit {
+        let key = getEnvVar("OPENAI_API_KEY")
+        let url = getEnvVar("OPENAI_BASE_URL", defaultValue: "https://api.openai.com/v1")
+        if (key.size > 0) {
+            this.apiKey = key
+            this.baseUrl = url
+            this.client = Some(OpenAIClient(key, baseUrl: url))
+            logger.info("AgentLoopManager: LLM client initialized", fields: [("base_url", url)])
+        } else {
+            logger.warning("AgentLoopManager: OPENAI_API_KEY not set, will use rule-based fallback")
+        }
+    }
 }
 
-// ????
+// 全局单例（在 main() 加载 .env 后须调用 agentLoopManager.reinitClient()）
 public let agentLoopManager = AgentLoopManager()

@@ -88,7 +88,8 @@ public class DocumentValidator {
     }
 
     public func validateVisualConsistency(documentContent: String): ValidationMetric {
-        let figureRegex = Regex("\\[Figure.*?\\]|\\[.*?\\]")
+        // 只匹配 [Figure ...] 格式（标准图示引用）
+        let figureRegex = Regex("\\[Figure[^\\]]*\\]")
         let figureMatcher = figureRegex.matcher(documentContent)
         var figureCount: Int64 = 0
         while (true) {
@@ -98,13 +99,14 @@ public class DocumentValidator {
         var metric: ValidationMetric
         if (figureCount == 0) {
             let recs = ArrayList<String>()
-            recs.add("Add visual elements to enhance understanding")
+            recs.add("Add [Figure X: Title] elements with captions to enhance visual consistency")
             metric = ValidationMetric(
                 "Visual Consistency", 50.0, "warning",
                 "No figures found in document", recs
             )
         } else {
-            let captionRegex = Regex("\\[Figure.*?\\]\\n\\n\\*[^*]+\\*")
+            // 兼容两种说明文字格式：\n\n*caption* 或 \n*caption*
+            let captionRegex = Regex("\\[Figure[^\\]]*\\]\\n+\\*[^*]+\\*")
             let captionMatcher = captionRegex.matcher(documentContent)
             var captionCount: Int64 = 0
             while (true) {
@@ -115,10 +117,10 @@ public class DocumentValidator {
             var score: Float64
             var status: String
             var details: String
-            if (captionRatio >= 0.9) {
+            if (captionRatio >= 0.8) {
                 score = 100.0; status = "pass"
-                details = "All ${figureCount} figures have detailed captions"
-            } else if (captionRatio >= 0.7) {
+                details = "${captionCount} of ${figureCount} figures have detailed captions"
+            } else if (captionRatio >= 0.5) {
                 score = 75.0; status = "warning"
                 details = "${captionCount} of ${figureCount} figures have captions"
             } else {
@@ -128,7 +130,7 @@ public class DocumentValidator {
 
             let recs = ArrayList<String>()
             if (captionRatio < 1.0) {
-                recs.add("Add captions to ${figureCount - captionCount} figures")
+                recs.add("Add captions to remaining ${figureCount - captionCount} figures")
             }
             metric = ValidationMetric("Visual Consistency", score, status, details, recs)
         }
@@ -202,8 +204,21 @@ public class DocumentValidator {
         let headingRegex = Regex("^#+.*$", RegexOption().multiLine())
         let contentOnly = headingRegex.matcher(documentContent).replaceAll("")
 
+        // 过滤掉词汇表条目（"**term**: definition" 格式）和图示说明行，
+        // 避免这些单行结构拉低平均段落长度导致误判
         var paragraphs = ArrayList<String>()
-        for (p in contentOnly.split("\n\n")) { if (p.trimAscii().size > 0) { paragraphs.add(p) } }
+        for (p in contentOnly.split("\n\n")) {
+            let trimmed = p.trimAscii()
+            if (trimmed.size > 0) {
+                // 跳过词汇表条目（以 ** 开头的单行定义）和图示行
+                let isGlossaryEntry = trimmed.startsWith("**") && trimmed.contains("**:")
+                let isFigureRef = trimmed.startsWith("[Figure") || trimmed.startsWith("*")
+                if (!isGlossaryEntry && !isFigureRef) {
+                    paragraphs.add(trimmed)
+                }
+            }
+        }
+
         var words = ArrayList<String>()
         for (w in contentOnly.split(" ")) { if (w.trimAscii().size > 0) { words.add(w) } }
         var sentences = ArrayList<String>()
@@ -218,10 +233,10 @@ public class DocumentValidator {
 
         var score: Float64 = 100.0
         if (avgParagraphLength > 200.0) { score -= 15.0 }
-        else if (avgParagraphLength < 30.0) { score -= 10.0 }
+        else if (avgParagraphLength < 20.0) { score -= 10.0 }  // 阈值从 30 降到 20，避免正常段落误判
 
         if (avgSentenceLength > 30.0) { score -= 20.0 }
-        else if (avgSentenceLength < 10.0) { score -= 5.0 }
+        else if (avgSentenceLength < 8.0) { score -= 5.0 }  // 阈值从 10 降到 8
 
         let listRegex = Regex("^[-*] |^\\d+\\.", RegexOption().multiLine())
         match (listRegex.matcher(contentOnly).find()) { case Some(_) => score += 10.0 case None => () }

@@ -372,6 +372,32 @@
             overflow: hidden;
         }
 
+        /* Use floating panels to avoid crowding the main view */
+        #actionPlanSection:not(.hidden),
+        #agentLoopReportSection:not(.hidden) {
+            position: fixed;
+            top: 96px;
+            left: 24px;
+            right: 24px;
+            max-height: calc(100vh - 120px);
+            z-index: 1000;
+            margin-top: 0;
+            box-shadow: var(--shadow-xl);
+            border: 1px solid rgba(15, 23, 42, 0.12);
+            display: flex;
+            flex-direction: column;
+        }
+
+        @media (max-width: 900px) {
+            #actionPlanSection:not(.hidden),
+            #agentLoopReportSection:not(.hidden) {
+                top: 16px;
+                left: 12px;
+                right: 12px;
+                max-height: calc(100vh - 32px);
+            }
+        }
+
         .action-plan-header {
             background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
             color: white;
@@ -382,9 +408,174 @@
         }
 
         .action-plan-content {
-            padding: 20px;
-            max-height: 400px;
+            padding: 24px 40px;
+            flex: 1;
             overflow-y: auto;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        /* ─── Markdown / Prose Styling (Action Plan + Report) ─── */
+        .action-plan-content {
+            color: var(--text-primary);
+            line-height: 1.65;
+            font-size: 14px;
+        }
+
+        .action-plan-content :where(h1, h2, h3, h4) {
+            letter-spacing: -0.2px;
+            line-height: 1.25;
+            margin: 18px 0 10px;
+        }
+
+        .action-plan-content :where(h1) {
+            font-size: 22px;
+            margin-top: 6px;
+        }
+
+        .action-plan-content :where(h2) {
+            font-size: 18px;
+            margin-top: 20px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .action-plan-content :where(h3) {
+            font-size: 16px;
+            margin-top: 18px;
+        }
+
+        .action-plan-content :where(p) {
+            margin: 10px 0;
+        }
+
+        .action-plan-content :where(a) {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+            overflow-wrap: anywhere;
+        }
+
+        .action-plan-content :where(a:hover) {
+            text-decoration: underline;
+        }
+
+        .action-plan-content :where(ul, ol) {
+            margin: 10px 0 12px;
+            padding-left: 22px;
+        }
+
+        .action-plan-content :where(ol > li)::marker {
+            font-weight: 800;
+            color: var(--text-secondary);
+        }
+
+        .action-plan-content :where(ul > li)::marker {
+            color: var(--text-secondary);
+        }
+
+        .action-plan-content :where(li) {
+            margin: 6px 0;
+        }
+
+        .action-plan-content :where(li > p) {
+            margin: 6px 0;
+        }
+
+        .action-plan-content :where(hr) {
+            border: 0;
+            border-top: 1px solid var(--border);
+            margin: 18px 0;
+        }
+
+        .action-plan-content :where(blockquote) {
+            margin: 12px 0;
+            padding: 10px 12px;
+            border-left: 3px solid var(--primary);
+            background: rgba(99, 102, 241, 0.06);
+            border-radius: 10px;
+            color: var(--text-secondary);
+        }
+
+        .action-plan-content :where(code) {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 12.5px;
+            background: rgba(15, 23, 42, 0.06);
+            padding: 2px 6px;
+            border-radius: 8px;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+        }
+
+        .action-plan-content :where(pre) {
+            margin: 12px 0;
+            padding: 12px 14px;
+            background: #0b1220;
+            color: #e5e7eb;
+            border-radius: 12px;
+            overflow: auto;
+            border: 1px solid rgba(15, 23, 42, 0.18);
+            box-shadow: 0 10px 20px rgba(2, 6, 23, 0.15);
+        }
+
+        .action-plan-content :where(pre code) {
+            background: transparent;
+            border: none;
+            padding: 0;
+            color: inherit;
+            font-size: 12.5px;
+        }
+
+        .action-plan-content :where(table) {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 12px 0;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            background: white;
+        }
+
+        .action-plan-content :where(th, td) {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            vertical-align: top;
+            font-size: 13px;
+        }
+
+        .action-plan-content :where(th) {
+            background: rgba(99, 102, 241, 0.06);
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .action-plan-content :where(tr:last-child td) {
+            border-bottom: none;
+        }
+
+        .action-plan-content :where(img) {
+            max-width: 100%;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .action-plan-content :where(input[type="checkbox"]) {
+            transform: translateY(1px);
+            margin-right: 8px;
+            accent-color: var(--primary);
+        }
+
+        .action-plan-content :where(strong) {
+            color: var(--text-primary);
+            font-weight: 800;
+        }
+
+        @media (max-width: 900px) {
+            .action-plan-content {
+                padding: 16px 18px;
+                max-width: 100%;
+            }
         }
 
         /* ─── Section Titles ─── */
@@ -662,6 +853,38 @@
         .control-btn.export { background-color: var(--export-orange); }
         .control-btn.export:hover:not(:disabled) { background-color: var(--accent-dark); }
 
+        /* Make Action Plan header download buttons visually lighter */
+        #downloadMarkdownBtn.control-btn.export,
+        #downloadImprovedDocBtn.control-btn.export {
+            background-color: transparent;
+            border: 1px solid rgba(255,255,255,0.7);
+        }
+
+        #downloadMarkdownBtn.control-btn.export:hover:not(:disabled),
+        #downloadImprovedDocBtn.control-btn.export:hover:not(:disabled) {
+            background-color: rgba(255,255,255,0.12);
+        }
+
+        /* ─── Summary / Action Controls Layout ─── */
+        .summary-bar {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 8px 4px 0 4px;
+        }
+
+        .action-plan-controls,
+        .agent-loop-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .summary-model-select {
+            min-width: 180px;
+        }
+
         /* ─── Debate Phase ─── */
         .debate-phase-divider {
             margin: 24px 0 14px 0;
@@ -724,9 +947,9 @@
                 <div class="section-title">1. Upload Documents</div>
                 <div class="upload-area" id="uploadArea">
                     <p style="margin: 5px 0; color: var(--text-secondary); font-size: 13px;">Drop documents here or click to browse</p>
-                    <input type="file" id="fileInput" class="file-input" accept=".txt,.md,.docx,.pdf" multiple>
+                    <input type="file" id="fileInput" class="file-input" accept=".txt,.md" multiple>
                     <button id="uploadBtn" class="btn" style="margin: 8px 0;">Choose Files</button>
-                    <p style="margin: 5px 0;"><small style="color: var(--text-muted);">TXT, Markdown, Word, PDF (Max: 10 files)</small></p>
+                    <p style="margin: 5px 0;"><small style="color: var(--text-muted);">TXT, Markdown (Max: 10 files)</small></p>
                 </div>
                 <div id="uploadStatus"></div>
                 
@@ -856,6 +1079,17 @@
                             </svg>
                             Regenerate
                         </button>
+
+                        <button class="control-btn export hidden" id="exportConversationMarkdownBtn"
+                                title="Export conversation as Markdown">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14,2 14,8 20,8"/>
+                                <path d="M7 13h10"/>
+                                <path d="M7 17h10"/>
+                            </svg>
+                            Export MD
+                        </button>
                         
                         <button class="btn send-btn" id="sendBtn"
                                 title="Send Message">
@@ -869,33 +1103,14 @@
                     
                     <!-- Summary and Export Section -->
                     <div class="summary-separator hidden" id="summarySeparator" style="height: 1px; background: linear-gradient(to right, transparent, var(--border) 20%, var(--border) 80%, transparent); margin: 15px 10px 5px 10px;"></div>
-                    <div class="summary-bar hidden" id="summaryBar" style="margin-top: 15px;">
-                        <!-- Export Controls -->
-                        <div class="export-controls" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
-                            <span style="font-size: 13px; color: var(--text-secondary); margin-right: 8px; font-weight: 600;">Export:</span>
-                            <button class="control-btn export hidden" id="exportMarkdownBtn" 
-                                    title="Export conversation as Markdown">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                    <polyline points="14,2 14,8 20,8"/>
-                                    <path d="M7 13l3 3 7-7"/>
-                                </svg>
-                                Markdown
-                            </button>
-                            <button class="control-btn export hidden" id="exportPdfBtn" 
-                                    title="Export conversation as PDF">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                    <polyline points="14,2 14,8 20,8"/>
-                                    <rect x="8" y="13" width="8" height="7" rx="1"/>
-                                </svg>
-                                PDF
-                            </button>
-                        </div>
-                        
+                    <div class="summary-bar hidden" id="summaryBar">
                         <!-- Action Plan Controls -->  
-                        <div class="action-plan-controls" style="display: flex; gap: 8px; align-items: center;">
-                            <span style="font-size: 13px; color: var(--text-secondary); margin-right: 8px; font-weight: 600;">Action Plan:</span>
+                        <div class="action-plan-controls">
+                            <span style="font-size: 13px; color: var(--text-secondary); font-weight: 600;">Action Plan</span>
+                            <select class="summary-model-select hidden" id="summaryModelSelect" 
+                                    title="AI model for summary generation">
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
                             <button class="control-btn summary hidden" id="summaryBtn" 
                                     title="Generate Action Plan">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -905,25 +1120,20 @@
                                     <line x1="16" y1="17" x2="8" y2="17"/>
                                     <polyline points="10,9 9,9 8,9"/>
                                 </svg>
-                                Generate Action Plan
+                                Generate
                             </button>
-                            <select class="summary-model-select hidden" id="summaryModelSelect" 
-                                    title="AI model for summary generation"
-                                    style="padding: 8px 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; background-color: var(--bg-card); cursor: pointer; font-family: inherit;">
-                                <!-- Options will be populated by JavaScript -->
-                            </select>
                         </div>
                         
                         <!-- Document Improvement Agent -->
-                        <div class="agent-loop-controls" style="display: flex; gap: 8px; align-items: center; margin-top: 12px;">
-                            <span style="font-size: 13px; color: var(--text-secondary); margin-right: 8px; font-weight: 600;">Doc Improve:</span>
+                        <div class="agent-loop-controls" style="margin-top: 4px;">
+                            <span style="font-size: 13px; color: var(--text-secondary); font-weight: 600;">Doc Improve</span>
                             <button class="control-btn hidden" id="runAgentLoopBtn" style="background: var(--primary); color: white;"
-                                    title="根据讨论反馈自动改进文档（Plan → Action → Observation → Reflection）">
+                                    title="Automatically improve the document from discussion feedback (Plan → Action → Observation → Reflection)">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M21 12a9 9 0 1 1-9-9"/>
                                     <polyline points="21 3 21 9 15 9"/>
                                 </svg>
-                                运行文档改进
+                                Run Doc Improvement
                             </button>
                             <span class="agent-loop-status" id="agentLoopStatus" style="font-size: 12px; color: var(--text-muted);"></span>
                         </div>
@@ -942,15 +1152,6 @@
                                     <path d="M7 13l3 3 7-7"/>
                                 </svg>
                                 Markdown
-                            </button>
-                            <button class="control-btn export" id="downloadPdfBtn" 
-                                    title="Download action plan as PDF">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                    <polyline points="14,2 14,8 20,8"/>
-                                    <rect x="8" y="13" width="8" height="7" rx="1"/>
-                                </svg>
-                                PDF
                             </button>
                             <button class="btn" id="closeActionPlanBtn" style="background: #64748b; margin-top: 0; padding: 8px 14px;">Close</button>
                         </div>

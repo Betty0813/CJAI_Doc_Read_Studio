@@ -216,7 +216,7 @@ class DocReadStudio {
 
         const displayName = (agentName || '').replace(/\s*\(Debate\)\s*$/, '');
         const avatarText = displayName.charAt(0).toUpperCase() || 'A';
-        const header = meta.is_debate ? `${displayName} <span class="debate-badge">辩论</span>` : displayName;
+        const header = meta.is_debate ? `${displayName} <span class="debate-badge">Debate</span>` : displayName;
         const tsLabel = timestamp ? new Date(timestamp).toLocaleTimeString() : '';
         const roleInfo = meta.role ? `<div style="font-size: 11px; opacity: 0.7; margin-bottom: 2px;">${meta.role}</div>` : '';
 
@@ -464,13 +464,13 @@ class DocReadStudio {
         }
     }
 
-    /** 在对话区插入「辩论阶段」分隔条，体现多 Agent 博弈过程 */
+    /** Insert a "Debate Phase" divider to show multi-agent contention. */
     insertDebatePhaseDivider() {
         const conversationDiv = this.getConversationDiv();
         if (!conversationDiv) return;
         const divider = document.createElement('div');
         divider.className = 'debate-phase-divider';
-        divider.textContent = '辩论阶段：各角色针对他人观点进行支持、质疑与补充';
+        divider.textContent = 'Debate phase: agents support, challenge, and refine each other’s points';
         conversationDiv.appendChild(divider);
         conversationDiv.scrollTop = conversationDiv.scrollHeight;
     }
@@ -718,22 +718,13 @@ class DocReadStudio {
                 this.sendPrompt();
             });
         }
-        
-        // Export markdown button
-        const exportMarkdownBtn = document.getElementById('exportMarkdownBtn');
-        if (exportMarkdownBtn) {
-            exportMarkdownBtn.addEventListener('click', () => {
-                console.log('Export markdown clicked!');
+
+        // Export conversation as Markdown button (compact, in button bar)
+        const exportConversationMarkdownBtn = document.getElementById('exportConversationMarkdownBtn');
+        if (exportConversationMarkdownBtn) {
+            exportConversationMarkdownBtn.addEventListener('click', () => {
+                console.log('Export conversation as Markdown clicked!');
                 this.exportConversation('markdown');
-            });
-        }
-        
-        // Export PDF button
-        const exportPdfBtn = document.getElementById('exportPdfBtn');
-        if (exportPdfBtn) {
-            exportPdfBtn.addEventListener('click', () => {
-                console.log('Export PDF clicked!');
-                this.exportConversation('pdf');
             });
         }
         
@@ -746,20 +737,12 @@ class DocReadStudio {
             });
         }
         
-        // Download action plan buttons
+        // Download action plan button
         const downloadMarkdownBtn = document.getElementById('downloadMarkdownBtn');
         if (downloadMarkdownBtn) {
             downloadMarkdownBtn.addEventListener('click', () => {
                 console.log('Download action plan as Markdown clicked!');
                 this.downloadActionPlan('markdown');
-            });
-        }
-        
-        const downloadPdfBtn = document.getElementById('downloadPdfBtn');
-        if (downloadPdfBtn) {
-            downloadPdfBtn.addEventListener('click', () => {
-                console.log('Download action plan as PDF clicked!');
-                this.downloadActionPlan('pdf');
             });
         }
         
@@ -1994,37 +1977,33 @@ class DocReadStudio {
         document.getElementById('summaryBtn').disabled = disabled;
         document.getElementById('summaryModelSelect').disabled = disabled;
         document.getElementById('promptInput').disabled = disabled;
-        document.getElementById('exportMarkdownBtn').disabled = disabled;
-        document.getElementById('exportPdfBtn').disabled = disabled;
+        const exportConversationMarkdownBtn = document.getElementById('exportConversationMarkdownBtn');
+        if (exportConversationMarkdownBtn) exportConversationMarkdownBtn.disabled = disabled;
         
         // Also disable action plan download buttons if they exist
         const downloadMarkdownBtn = document.getElementById('downloadMarkdownBtn');
-        const downloadPdfBtn = document.getElementById('downloadPdfBtn');
         if (downloadMarkdownBtn) downloadMarkdownBtn.disabled = disabled;
-        if (downloadPdfBtn) downloadPdfBtn.disabled = disabled;
     }
     
     updateControlsVisibility() {
         const regenerateBtn = document.getElementById('regenerateBtn');
         const revertBtn = document.getElementById('revertBtn');
+        const exportConversationMarkdownBtn = document.getElementById('exportConversationMarkdownBtn');
         const summaryBtn = document.getElementById('summaryBtn');
         const summaryModelSelect = document.getElementById('summaryModelSelect');
         const summaryBar = document.getElementById('summaryBar');
         const summarySeparator = document.getElementById('summarySeparator');
-        const exportMarkdownBtn = document.getElementById('exportMarkdownBtn');
-        const exportPdfBtn = document.getElementById('exportPdfBtn');
         const runAgentLoopBtn = document.getElementById('runAgentLoopBtn');
         const agentLoopControls = document.querySelector('.agent-loop-controls');
         
         if (!this.sessionId) {
             regenerateBtn.classList.add('hidden');
             revertBtn.classList.add('hidden');
+            if (exportConversationMarkdownBtn) exportConversationMarkdownBtn.classList.add('hidden');
             summaryBtn.classList.add('hidden');
             summaryModelSelect.classList.add('hidden');
             summaryBar.classList.add('hidden');
             summarySeparator.classList.add('hidden');
-            exportMarkdownBtn.classList.add('hidden');
-            exportPdfBtn.classList.add('hidden');
             if (runAgentLoopBtn) runAgentLoopBtn.classList.add('hidden');
             if (agentLoopControls) agentLoopControls.classList.add('hidden');
             return;
@@ -2037,23 +2016,21 @@ class DocReadStudio {
         if (agentMessages.length > 0) {
             regenerateBtn.classList.remove('hidden');
             revertBtn.classList.remove('hidden');
+            if (exportConversationMarkdownBtn) exportConversationMarkdownBtn.classList.remove('hidden');
             summaryBtn.classList.remove('hidden');
             summaryModelSelect.classList.remove('hidden');
             summaryBar.classList.remove('hidden');
             summarySeparator.classList.remove('hidden');
-            exportMarkdownBtn.classList.remove('hidden');
-            exportPdfBtn.classList.remove('hidden');
             if (runAgentLoopBtn) runAgentLoopBtn.classList.remove('hidden');
             if (agentLoopControls) agentLoopControls.classList.remove('hidden');
         } else {
             regenerateBtn.classList.add('hidden');
             revertBtn.classList.add('hidden');
+            if (exportConversationMarkdownBtn) exportConversationMarkdownBtn.classList.add('hidden');
             summaryBtn.classList.add('hidden');
             summaryModelSelect.classList.add('hidden');
             summaryBar.classList.add('hidden');
             summarySeparator.classList.add('hidden');
-            exportMarkdownBtn.classList.add('hidden');
-            exportPdfBtn.classList.add('hidden');
             if (runAgentLoopBtn) runAgentLoopBtn.classList.add('hidden');
             if (agentLoopControls) agentLoopControls.classList.add('hidden');
         }
@@ -2077,12 +2054,12 @@ class DocReadStudio {
         // Hide controls and document info
         document.getElementById('regenerateBtn').classList.add('hidden');
         document.getElementById('revertBtn').classList.add('hidden');
+        const exportConversationMarkdownBtn = document.getElementById('exportConversationMarkdownBtn');
+        if (exportConversationMarkdownBtn) exportConversationMarkdownBtn.classList.add('hidden');
         document.getElementById('summaryBtn').classList.add('hidden');
         document.getElementById('summaryModelSelect').classList.add('hidden');
         document.getElementById('summaryBar').classList.add('hidden');
         document.getElementById('summarySeparator').classList.add('hidden');
-        document.getElementById('exportMarkdownBtn').classList.add('hidden');
-        document.getElementById('exportPdfBtn').classList.add('hidden');
         const runAgentLoopBtn = document.getElementById('runAgentLoopBtn');
         const agentLoopControls = document.querySelector('.agent-loop-controls');
         if (runAgentLoopBtn) runAgentLoopBtn.classList.add('hidden');
@@ -2185,7 +2162,6 @@ class DocReadStudio {
         const actionPlanSection = document.getElementById('actionPlanSection');
         const actionPlanContent = document.getElementById('actionPlanContent');
         const downloadMarkdownBtn = document.getElementById('downloadMarkdownBtn');
-        const downloadPdfBtn = document.getElementById('downloadPdfBtn');
         
         // Render the markdown content
         actionPlanContent.innerHTML = this.formatMessageContent(markdownContent);
@@ -2193,7 +2169,6 @@ class DocReadStudio {
         // Show the action plan section and download buttons
         actionPlanSection.classList.remove('hidden');
         if (downloadMarkdownBtn) downloadMarkdownBtn.classList.remove('hidden');
-        if (downloadPdfBtn) downloadPdfBtn.classList.remove('hidden');
         
         // Scroll to the action plan
         actionPlanSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2206,49 +2181,10 @@ class DocReadStudio {
             this.showStatus('No action plan to download', 'error');
             return;
         }
-        
-        if (format === 'pdf') {
-            // Use the new backend content export endpoint for PDF generation
-            try {
-                const response = await fetch(`${this.apiUrl}/export/content`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        content: this.actionPlanData.content,
-                        format: 'pdf',
-                        filename: this.actionPlanData.filename.replace('.md', '.pdf')
-                    })
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`PDF export failed: ${response.statusText}`);
-                }
-                
-                // Download the PDF blob
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = url;
-                a.download = this.actionPlanData.filename.replace('.md', '.pdf');
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-                
-                this.log('info', 'Action plan downloaded as PDF', { filename: this.actionPlanData.filename });
-                this.showStatus('Action plan downloaded as PDF successfully!', 'success');
-            } catch (error) {
-                this.log('error', 'Failed to download action plan as PDF', { error: error.message });
-                this.showStatus(`Failed to download PDF: ${error.message}`, 'error');
-            }
-        } else {
-            this.downloadMarkdownFile(this.actionPlanData.content, this.actionPlanData.filename);
-            this.log('info', 'Action plan downloaded as Markdown', { filename: this.actionPlanData.filename });
-            this.showStatus('Action plan downloaded as Markdown successfully!', 'success');
-        }
+
+        this.downloadMarkdownFile(this.actionPlanData.content, this.actionPlanData.filename);
+        this.log('info', 'Action plan downloaded as Markdown', { filename: this.actionPlanData.filename });
+        this.showStatus('Action plan downloaded as Markdown successfully!', 'success');
     }
     
     closeActionPlan() {
@@ -2259,13 +2195,13 @@ class DocReadStudio {
 
     async runAgentLoop() {
         if (!this.sessionId) {
-            this.showStatus('没有可用会话', 'error');
+            this.showStatus('No active session', 'error');
             return;
         }
         const runBtn = document.getElementById('runAgentLoopBtn');
         const statusEl = document.getElementById('agentLoopStatus');
         if (runBtn) runBtn.disabled = true;
-        if (statusEl) statusEl.textContent = '正在运行文档改进…';
+        if (statusEl) statusEl.textContent = 'Running document improvement…';
         this.log('info', 'Running document improvement agent loop');
         try {
             let done = false;
@@ -2276,7 +2212,7 @@ class DocReadStudio {
                         const j = await r.json().catch(() => ({}));
                         if (j?.state === 'running') {
                             const s = j.status || '';
-                            if (statusEl) statusEl.textContent = s ? `正在运行文档改进… ${s}` : '正在运行文档改进…';
+                            if (statusEl) statusEl.textContent = s ? `Running document improvement… ${s}` : 'Running document improvement…';
                         }
                     } catch (_) {
                         // ignore transient polling errors
@@ -2293,18 +2229,18 @@ class DocReadStudio {
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok) {
-                throw new Error(data.detail || response.statusText || '请求失败');
+                throw new Error(data.detail || response.statusText || 'Request failed');
             }
             done = true;
             await pollPromise.catch(() => {});
             this.agentLoopReportData = data;
             this.displayAgentLoopReport(data);
-            if (statusEl) statusEl.textContent = `已完成，共 ${data.total_iterations || 0} 轮迭代`;
-            this.showStatus('文档改进完成', 'success');
+            if (statusEl) statusEl.textContent = `Done. ${data.total_iterations || 0} iteration(s).`;
+            this.showStatus('Document improvement completed', 'success');
         } catch (err) {
             this.log('error', 'Agent loop failed', { error: err.message });
             if (statusEl) statusEl.textContent = '';
-            this.showStatus('文档改进失败: ' + err.message, 'error');
+            this.showStatus('Document improvement failed: ' + err.message, 'error');
         } finally {
             if (runBtn) runBtn.disabled = false;
         }
@@ -2319,48 +2255,48 @@ class DocReadStudio {
         const history = report.iteration_history || [];
         let html = '<div class="agent-loop-report">';
 
-        html += `<p><strong>状态:</strong> ${report.status || 'completed'} | <strong>迭代次数:</strong> ${report.total_iterations || 0} | <strong>收敛:</strong> ${report.converged ? '是' : '否'}</p>`;
+        html += `<p><strong>Status:</strong> ${report.status || 'completed'} | <strong>Iterations:</strong> ${report.total_iterations || 0} | <strong>Converged:</strong> ${report.converged ? 'Yes' : 'No'}</p>`;
         if (report.total_improvement_score != null) {
             const v = Number(report.total_improvement_score);
             if (Number.isFinite(v)) {
-                html += `<p><strong>总体改进分数:</strong> ${v.toFixed(1)}`;
+                html += `<p><strong>Total improvement score:</strong> ${v.toFixed(1)}`;
                 if (v === 0) {
-                    html += ` <span style="color:#6c757d;font-size:12px;">（可能原因：未对文档执行修改工具，或修改后各维度分数无变化）</span>`;
+                    html += ` <span style="color:#6c757d;font-size:12px;">(Possible reasons: no document-editing tool was executed, or scores did not change after edits.)</span>`;
                 }
                 html += `</p>`;
             }
         }
 
-        // 改进指标
+        // Improvement metrics
         if (Object.keys(improvements).length) {
-            html += '<h4>改进指标</h4><ul>';
+            html += '<h4>Improvement metrics</h4><ul>';
             for (const [k, v] of Object.entries(improvements)) {
                 if (k !== 'converged' && typeof v === 'number') html += `<li>${k}: ${v.toFixed(1)}</li>`;
             }
             html += '</ul>';
         }
 
-        // 迭代历史 — 含 ReAct 推理链
+        // Iteration history — includes ReAct trace
         if (history.length) {
-            html += '<h4>迭代历史 (ReAct 推理链)</h4>';
+            html += '<h4>Iteration history (ReAct trace)</h4>';
             history.forEach((iter) => {
                 html += `<div style="margin-bottom:16px; padding:12px; background:#f8f9fa; border-radius:8px; border-left:3px solid #0d6efd;">`;
-                html += `<strong>第 ${iter.iteration} 轮</strong>`;
+                html += `<strong>Iteration ${iter.iteration}</strong>`;
                 const ref = iter.reflection || {};
                 if (ref.overall_improvement_score != null) {
-                    html += ` | <strong>本轮改进分数: ${Number(ref.overall_improvement_score).toFixed(1)}</strong>`;
+                    html += ` | <strong>Improvement this iteration: ${Number(ref.overall_improvement_score).toFixed(1)}</strong>`;
                     if (Number(ref.overall_improvement_score) === 0 && iter.improvement_note) {
                         html += ` <span style="color:#856404;font-size:12px;">${this.escapeHtml(iter.improvement_note)}</span>`;
                     }
                 }
-                if (iter.actions && iter.actions.length) html += ` | 工具调用: ${iter.actions.join(', ')}`;
+                if (iter.actions && iter.actions.length) html += ` | Tools: ${iter.actions.join(', ')}`;
                 if (iter.metrics_before && Object.keys(iter.metrics_before).length) {
                     const beforeStr = Object.entries(iter.metrics_before).map(([k, v]) => `${k}: ${typeof v === 'number' ? v.toFixed(1) : v}`).join(', ');
-                    html += `<div style="margin-top:4px; font-size:12px; color:#6c757d;">改进前维度分数: ${beforeStr}</div>`;
+                    html += `<div style="margin-top:4px; font-size:12px; color:#6c757d;">Pre-improvement dimension scores: ${beforeStr}</div>`;
                 }
-                if (iter.error) html += ` | <span style="color:red">错误: ${iter.error}</span>`;
+                if (iter.error) html += ` | <span style="color:red">Error: ${iter.error}</span>`;
 
-                // ReAct 推理步骤
+                // ReAct steps
                 const steps = iter.react_steps || [];
                 if (steps.length) {
                     html += '<div style="margin-top:8px;">';
@@ -2374,35 +2310,35 @@ class DocReadStudio {
                     html += '</div>';
                 }
 
-                // 反思
+                // Reflection
                 if (iter.reflection && iter.reflection.reasoning) {
                     html += `<div style="margin-top:6px; font-size:13px; color:#6c757d;"><strong>Reflection:</strong> ${this.escapeHtml(iter.reflection.reasoning)}</div>`;
                 }
 
-                // 本轮回调后的各维度分数（非改进值；改进值见上方「本轮改进分数」）
+                // Dimension scores after callbacks (not improvements)
                 if (iter.metrics) {
                     const metricStr = Object.entries(iter.metrics).map(([k,v]) => `${k}: ${typeof v === 'number' ? v.toFixed(1) : v}`).join(', ');
-                    html += `<div style="margin-top:4px; font-size:12px; color:#6c757d;">本轮回调后维度分数: ${metricStr}</div>`;
+                    html += `<div style="margin-top:4px; font-size:12px; color:#6c757d;">Post-callback dimension scores: ${metricStr}</div>`;
                 }
                 html += '</div>';
             });
         }
 
-        // 记忆统计
+        // Memory stats
         if (report.memory_stats) {
-            html += `<h4>长期记忆</h4><p style="font-size:13px; color:#6c757d;">共 ${report.memory_stats.total_entries || 0} 条记忆`;
+            html += `<h4>Long-term memory</h4><p style="font-size:13px; color:#6c757d;">${report.memory_stats.total_entries || 0} entr${(report.memory_stats.total_entries || 0) === 1 ? 'y' : 'ies'}`;
             if (report.memory_stats.categories) {
                 html += ` (${Object.entries(report.memory_stats.categories).map(([k,v]) => `${k}: ${v}`).join(', ')})`;
             }
             html += '</p>';
         }
 
-        // 文档预览
+        // Document preview
         const preview = report.final_document_preview || report.final_document || '';
         if (preview) {
-            html += '<h4>改进后文档预览</h4><pre style="white-space:pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px; max-height:300px; overflow:auto;">';
+            html += '<h4>Improved document preview</h4><pre style="white-space:pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px; max-height:300px; overflow:auto;">';
             html += this.escapeHtml(preview.slice(0, 2000));
-            if (preview.length > 2000) html += '\n...(更多内容请下载)';
+            if (preview.length > 2000) html += '\n...(download to view more)';
             html += '</pre>';
         }
         html += '</div>';
@@ -2426,7 +2362,7 @@ class DocReadStudio {
 
     async downloadImprovedDocument() {
         if (!this.sessionId || !this.agentLoopReportData) {
-            this.showStatus('没有可下载的改进文档', 'error');
+            this.showStatus('No improved document available to download', 'error');
             return;
         }
         try {
@@ -2436,9 +2372,9 @@ class DocReadStudio {
             const content = data.content || '';
             const filename = `improved_document_${this.sessionId.slice(0, 8)}.md`;
             this.downloadMarkdownFile(content, filename);
-            this.showStatus('改进文档已下载', 'success');
+            this.showStatus('Improved document downloaded', 'success');
         } catch (err) {
-            this.showStatus('下载失败: ' + err.message, 'error');
+            this.showStatus('Download failed: ' + err.message, 'error');
         }
     }
 
@@ -2451,10 +2387,6 @@ class DocReadStudio {
         this.log('info', 'Exporting conversation', { format });
         
         try {
-            // Disable export buttons during export
-            document.getElementById('exportMarkdownBtn').disabled = true;
-            document.getElementById('exportPdfBtn').disabled = true;
-            
             const response = await fetch(`${this.apiUrl}/sessions/${this.sessionId}/export`, {
                 method: 'POST',
                 headers: {
@@ -2502,9 +2434,7 @@ class DocReadStudio {
             this.log('error', 'Failed to export conversation', { format, error: error.message });
             this.showStatus(`Failed to export conversation: ${error.message}`, 'error');
         } finally {
-            // Re-enable export buttons
-            document.getElementById('exportMarkdownBtn').disabled = false;
-            document.getElementById('exportPdfBtn').disabled = false;
+            // No UI toggle needed here after removing inline export button
         }
     }
 
@@ -2557,7 +2487,7 @@ class DocReadStudio {
 
         const messageDiv = this.createElement('div', `message ${message.type}`);
 
-        // 辩论消息：在第一条辩论前插入「辩论阶段」分隔条
+        // Debate messages: insert the "Debate phase" divider before the first debate entry
         if (message.type === 'agent' && message.is_debate) {
             const last = conversationDiv.lastElementChild;
             const isLastDebate = last && last.classList.contains('message-debate');
@@ -2578,7 +2508,7 @@ class DocReadStudio {
             header = displayName;
             avatarText = displayName.charAt(0).toUpperCase() || 'A';
             if (message.is_debate) {
-                header += ' <span class="debate-badge">辩论</span>';
+                header += ' <span class="debate-badge">Debate</span>';
             }
         } else {
             header = 'System';

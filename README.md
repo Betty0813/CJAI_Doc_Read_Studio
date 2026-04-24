@@ -1,4 +1,4 @@
-# AI Doc Read Studio
+# Agentic Doc Intelligence Studio
 
 基于多 AI 角色的文档审阅与自动改进应用。上传文档后，多个"专家"角色（产品、技术、测试、设计等）进行多轮讨论与辩论，并由文档改进 Agent（ReAct 架构）根据讨论结果自动改进文档。
 
